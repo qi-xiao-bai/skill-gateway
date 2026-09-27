@@ -19,10 +19,15 @@ def test_starstar_prefix_matches_any_level_and_root():
     assert ig.match(os.path.join(OTHER, "deep"), True)  # 根层级也该命中
 
 
-def test_starstar_suffix_matches_descendants():
+def test_starstar_suffix_requires_relative_base():
+    """`a/**` 含目录分隔符：无相对基准（rel_to/技能根）时不匹配任何路径——
+    此前的"逐层后缀"近似会被 CI runner 路径里的 D:\a\... 之类段落造成假阳性。"""
     ig = _ig(["a/**"])
-    assert ig.match(os.path.join(OTHER, "a", "b", "c.txt"), False)
+    assert not ig.match(os.path.join(OTHER, "a", "b", "c.txt"), False)
     assert not ig.match(os.path.join(OTHER, "b", "c.txt"), False)
+    # 给出扫描根后才按 gitignore 相对语义生效
+    assert ig.match(os.path.join(OTHER, "a", "b", "c.txt"), False, rel_to=OTHER)
+    assert not ig.match(os.path.join(OTHER, "b", "c.txt"), False, rel_to=OTHER)
 
 
 def test_anchored_rule_confined_to_root():

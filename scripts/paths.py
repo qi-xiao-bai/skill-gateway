@@ -137,7 +137,13 @@ class _Ignore:
             line = line.strip("/") if anchored else line
             if not line:
                 continue
-            need_rel = anchored or "/" in line
+            # `**/x` 的 gitignore 语义 = 任意层级（含根）的 x → 等价 basename 规则，
+            # 不需要相对基准（否则 CI 的 `**/deep` 这类规则在根外路径全部失效）
+            if line.startswith("**/") and "/" not in line[3:]:
+                line = line[3:]
+                need_rel = False
+            else:
+                need_rel = anchored or "/" in line
             # 尾部匹配时用到的段数（`**` 不计）
             nseg = max(1, len([s for s in line.split("/") if s and s != "**"]))
             self.rules.append(
@@ -157,12 +163,10 @@ class _Ignore:
     def match(self, path, is_dir=False, rel_to=None):
         """判定是否忽略。rel_to = 扫描根：含 `/` 的规则按"该根自己的 .gitignore"
         语义做相对匹配（`a/**` 命中根下 a 的所有后代，`*/backup` 只命中隔层的 backup）。
-        路径不在 rel_to 下时退化为逐层后缀近似。锚定规则（`/x`）永远只作用于技能根。"""
+        锚定规则（`/x`）永远只作用于技能根；无相对基准时含 `/` 的规则一律不匹配。"""
         base = os.path.basename(path.rstrip("/\\"))
         rel_root = self._rel_to(path, self.root)
         rel_scan = self._rel_to(path, rel_to) if rel_to else None
-        posix = os.path.normcase(os.path.abspath(path)).replace(os.sep, "/")
-        segs = posix.split("/")
         verdict = False
         for neg, anchored, need_rel, dir_only, rx, nseg in self.rules:
             if dir_only and not is_dir:
@@ -177,8 +181,10 @@ class _Ignore:
                 elif rel_root is not None:
                     targets = [rel_root]
                 else:
-                    # 既不在技能根也不在扫描根：对路径各层后缀尝试匹配（近似）
-                    targets = ["/".join(segs[-k:]) for k in range(1, len(segs) + 1)]
+                    # 无相对基准（既不在技能根也不在扫描根）：含 / 的规则不匹配。
+                    # 此前这里对绝对路径逐层后缀尝试匹配，CI runner 的 D:\a\<repo>
+                    # 恰好被 `a/**` 命中——路径偶然性造成假阳性，必须杜绝。
+                    continue
             else:
                 targets = [base]
             if any(rx.match(t) for t in targets):
