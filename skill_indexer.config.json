@@ -1,0 +1,6 @@
+{
+  "_说明": "可选配置。产物默认存放于 output/ 目录，可通过 out_dir 自定义；把你要索引的技能目录写进 skill_roots（也支持 ~ 和环境变量），留空则只用内置约定目录 + 自身相对 + 广域兜底。",
+  "out_dir": "output",
+  "skill_roots": [],
+  "mcp_configs": []
+}

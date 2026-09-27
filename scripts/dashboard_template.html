@@ -1,0 +1,1895 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Skill Graph Dashboard | 技能知识图谱</title>
+<style>
+  :root {
+    --bg-base: #09090b;
+    --bg-card: rgba(24, 24, 27, 0.85);
+    --bg-card-solid: #18181b;
+    --bg-surface-hover: rgba(39, 39, 42, 0.8);
+    --border-color: rgba(255, 255, 255, 0.1);
+    --border-highlight: rgba(99, 102, 241, 0.4);
+    --text-main: #f4f4f5;
+    --text-muted: #a1a1aa;
+    --text-dim: #71717a;
+    --accent-indigo: #6366f1;
+    --accent-sky: #38bdf8;
+    --accent-rose: #f43f5e;
+    --accent-emerald: #10b981;
+    --accent-amber: #f59e0b;
+    --accent-purple: #c084fc;
+    --accent-orange: #fb923c;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background-color: var(--bg-base);
+    color: var(--text-main);
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 9999px; }
+  ::-webkit-scrollbar-thumb:hover { background: #52525b; }
+
+  /* SVG Canvas */
+  #graph-svg {
+    width: 100vw;
+    height: 100vh;
+    display: block;
+    cursor: grab;
+  }
+  #graph-svg:active { cursor: grabbing; }
+
+  /* Top Navigation Bar */
+  #top-bar {
+    position: fixed;
+    top: 14px;
+    left: 14px;
+    right: 14px;
+    height: 52px;
+    background: var(--bg-card);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    z-index: 50;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
+  }
+
+  .nav-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .brand-logo {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(56, 189, 248, 0.25));
+    border: 1px solid rgba(99, 102, 241, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-indigo);
+  }
+  .brand-title {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--text-main);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .version-tag {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .stats-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 8px;
+  }
+  .stat-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    color: var(--text-muted);
+  }
+  .stat-chip strong {
+    color: var(--text-main);
+    font-weight: 600;
+  }
+  .dot-skill { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-sky); }
+  .dot-mcp { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-rose); }
+  .dot-edge { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-purple); }
+
+  /* Search Bar */
+  .nav-center {
+    flex: 1;
+    max-width: 360px;
+    margin: 0 16px;
+  }
+  .search-box {
+    position: relative;
+    display: flex;
+    align-items: center;
+    background: rgba(9, 9, 11, 0.7);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 0 10px;
+    height: 34px;
+    transition: all 0.2s ease;
+  }
+  .search-box:focus-within {
+    border-color: var(--accent-indigo);
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
+  }
+  .search-icon {
+    color: var(--text-dim);
+    margin-right: 8px;
+    display: flex;
+    align-items: center;
+  }
+  .search-input {
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text-main);
+    font-size: 13px;
+    width: 100%;
+  }
+  .search-input::placeholder {
+    color: var(--text-dim);
+  }
+  .search-kbd {
+    font-size: 10px;
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    border-radius: 4px;
+    padding: 1px 5px;
+    color: var(--text-muted);
+    font-family: inherit;
+  }
+  .search-clear {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 2px 4px;
+    display: none;
+    align-items: center;
+  }
+  .search-clear:hover { color: var(--text-main); }
+
+  /* Nav Right Controls */
+  .nav-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .filter-pills {
+    display: flex;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    padding: 2px;
+  }
+  .filter-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-weight: 500;
+  }
+  .filter-btn.active {
+    background: #27272a;
+    color: var(--text-main);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+  .filter-btn:hover:not(.active) {
+    color: var(--text-main);
+  }
+
+  .btn {
+    height: 32px;
+    padding: 0 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+    border: 1px solid var(--border-color);
+    background: rgba(39, 39, 42, 0.6);
+    color: var(--text-main);
+  }
+  .btn:hover {
+    background: rgba(63, 63, 70, 0.8);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+  .btn:active {
+    transform: scale(0.97);
+  }
+  .btn-icon {
+    width: 32px;
+    padding: 0;
+    justify-content: center;
+  }
+  .btn-lang {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(56, 189, 248, 0.15));
+    border-color: rgba(99, 102, 241, 0.3);
+    color: #c7d2fe;
+    font-weight: 600;
+  }
+  .btn-lang:hover {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(56, 189, 248, 0.25));
+    border-color: rgba(99, 102, 241, 0.5);
+    color: #ffffff;
+  }
+
+  .control-group {
+    display: flex;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .control-group .btn-icon {
+    border: none;
+    border-radius: 0;
+    border-right: 1px solid var(--border-color);
+  }
+  .control-group .btn-icon:last-child {
+    border-right: none;
+  }
+
+  /* Inspector Card (Right Drawer) */
+  #inspector {
+    position: fixed;
+    top: 78px;
+    right: 14px;
+    width: 380px;
+    max-height: calc(100vh - 94px);
+    background: var(--bg-card);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.7);
+    z-index: 40;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
+  }
+
+  /* Empty state */
+  .empty-state {
+    text-align: center;
+    padding: 24px 8px;
+  }
+  .empty-icon {
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 14px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-sky);
+  }
+  .empty-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--text-main);
+  }
+  .empty-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.6;
+    margin-bottom: 18px;
+  }
+  .tips-card {
+    text-align: left;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    font-size: 12px;
+  }
+  .tips-title {
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .tips-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: var(--text-dim);
+  }
+  .tips-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .tips-list span { color: var(--text-muted); }
+
+  /* Inspector Node View */
+  .inspector-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .node-title-group {
+    flex: 1;
+    min-width: 0;
+  }
+  .node-name {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-main);
+    word-break: break-word;
+    letter-spacing: -0.01em;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn-close {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+  }
+  .btn-close:hover { color: var(--text-main); background: rgba(255, 255, 255, 0.08); }
+
+  .badges-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    border: 1px solid transparent;
+  }
+  .badge-skill { background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.3); color: var(--accent-sky); }
+  .badge-mcp { background: rgba(244, 63, 94, 0.15); border-color: rgba(244, 63, 94, 0.3); color: var(--accent-rose); }
+  .badge-connector { background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.3); color: var(--accent-emerald); }
+  .badge-agent { background: rgba(168, 85, 247, 0.15); border-color: rgba(168, 85, 247, 0.3); color: var(--accent-purple); }
+  .badge-active { background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.3); color: var(--accent-emerald); }
+  .badge-excluded { background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.3); color: #f87171; }
+  .badge-refs { background: rgba(192, 132, 252, 0.15); border-color: rgba(192, 132, 252, 0.3); color: var(--accent-purple); }
+
+  /* Excluded Alert Box */
+  .alert-excluded {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: var(--radius-md);
+    padding: 10px 12px;
+    font-size: 12px;
+  }
+  .alert-title {
+    font-weight: 600;
+    color: #f87171;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .alert-desc {
+    color: #fca5a5;
+    line-height: 1.4;
+  }
+
+  
+  /* Description Language Switcher */
+  .desc-lang-switch {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 11px;
+  }
+  .desc-lang-btn {
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 11px;
+    transition: all 0.15s ease;
+    user-select: none;
+  }
+  .desc-lang-btn:hover { color: var(--text-main); }
+  .desc-lang-btn.active {
+    color: var(--accent-sky);
+    font-weight: 700;
+  }
+  .desc-en-sub {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed rgba(255, 255, 255, 0.08);
+    color: var(--text-dim);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  /* Connection Item Polish */
+  .conn-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: var(--radius-md);
+    padding: 8px 10px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .conn-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
+    transform: translateX(2px);
+  }
+  .conn-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .conn-subdesc {
+    font-size: 11px;
+    color: var(--text-dim);
+    padding-left: 2px;
+    line-height: 1.35;
+  }
+
+  /* Relation Guide Card */
+  .relation-guide-box {
+    background: rgba(99, 102, 241, 0.06);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    border-radius: var(--radius-md);
+    padding: 8px 12px;
+    font-size: 11.5px;
+    margin-bottom: 8px;
+  }
+  .relation-guide-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    color: #c7d2fe;
+    font-size: 11px;
+  }
+  .relation-guide-body {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(99, 102, 241, 0.15);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .guide-row {
+    display: flex;
+    gap: 6px;
+    align-items: flex-start;
+  }
+  .guide-row strong {
+    flex-shrink: 0;
+    color: var(--text-main);
+  }
+
+  /* Section Styles */
+  .section-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .section-content {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.55;
+    word-break: break-word;
+    user-select: text;
+  }
+
+  .trigger-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .trigger-pill {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 9999px;
+    padding: 3px 10px;
+    font-size: 11px;
+    color: #d4d4d8;
+    user-select: text;
+  }
+
+  /* Connections Network List */
+  .connections-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 250px;
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+  .conn-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .conn-name {
+    font-weight: 500;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .conn-tag {
+    font-size: 10.5px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .inspector-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .inspector-actions .btn {
+    flex: 1;
+    justify-content: center;
+  }
+
+  /* Legend (Bottom Left) */
+  #legend {
+    position: fixed;
+    bottom: 14px;
+    left: 14px;
+    background: var(--bg-card);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+    z-index: 40;
+    font-size: 12px;
+    min-width: 250px;
+    padding: 12px 14px;
+    transition: all 0.2s ease;
+  }
+  .legend-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--text-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .legend-body {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .legend-section-title {
+    font-size: 10px;
+    color: var(--text-dim);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 2px;
+  }
+  .legend-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+  .legend-dot { width: 9px; height: 9px; border-radius: 50%; }
+  .legend-line { width: 14px; height: 3px; border-radius: 2px; }
+
+  .legend-toggles {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .legend-toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-muted);
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .legend-toggle-label input {
+    cursor: pointer;
+    accent-color: var(--accent-indigo);
+  }
+
+  /* Node and Link styling */
+  .node { cursor: pointer; }
+  .node circle.main-circle {
+    transition: r 0.2s cubic-bezier(0.16, 1, 0.3, 1), stroke-width 0.2s ease;
+  }
+  .node:hover circle.main-circle {
+    r: 10;
+    stroke-width: 2.5px;
+    filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.6));
+  }
+  .node.selected circle.main-circle {
+    stroke-width: 3px;
+    stroke: #ffffff !important;
+    filter: drop-shadow(0 0 12px rgba(99, 102, 241, 0.8));
+  }
+  .node.selected circle.glow-ring {
+    display: block;
+  }
+  .glow-ring {
+    display: none;
+    fill: none;
+    stroke: var(--accent-indigo);
+    stroke-width: 2px;
+    opacity: 0.6;
+    animation: pulse 2s infinite ease-in-out;
+  }
+  @keyframes pulse {
+    0% { r: 12; opacity: 0.8; }
+    50% { r: 18; opacity: 0.2; }
+    100% { r: 12; opacity: 0.8; }
+  }
+
+  .node text {
+    font-size: 11px;
+    font-weight: 500;
+    fill: #e4e4e7;
+    pointer-events: none;
+    paint-order: stroke;
+    stroke: #09090b;
+    stroke-width: 3px;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: opacity 0.2s ease;
+  }
+  .node.excluded text {
+    fill: #71717a;
+    font-style: italic;
+  }
+
+  .link {
+    transition: opacity 0.2s ease, stroke-width 0.2s ease;
+  }
+
+  /* Toast message */
+  #toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: #18181b;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: var(--text-main);
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7);
+    z-index: 100;
+    transform: translateY(60px);
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  #toast.show {
+    transform: translateY(0);
+    opacity: 1;
+  }
+</style>
+</head>
+<body>
+
+<!-- Top Navigation Bar -->
+<header id="top-bar">
+  <div class="nav-left">
+    <div class="brand-logo">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="18" cy="5" r="3"></circle>
+        <circle cx="6" cy="12" r="3"></circle>
+        <circle cx="18" cy="19" r="3"></circle>
+        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+        <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+      </svg>
+    </div>
+    <div class="brand-title">
+      <span data-i18n="app_title">Skill Indexer</span>
+      <span class="version-tag">v2.0</span>
+    </div>
+
+    <div class="stats-group">
+      <div class="stat-chip" title="Total Skills / 技能总数">
+        <div class="dot-skill"></div>
+        <span data-i18n="stat_skills">技能</span>: <strong id="stat-skills">__STAT_SKILLS__</strong>
+      </div>
+      <div class="stat-chip" title="MCP Servers / MCP工具">
+        <div class="dot-mcp"></div>
+        <span data-i18n="stat_mcps">MCP</span>: <strong id="stat-mcps">__STAT_MCPS__</strong>
+      </div>
+      <div class="stat-chip" title="Relations / 拓扑关系边">
+        <div class="dot-edge"></div>
+        <span data-i18n="stat_edges">关系</span>: <strong id="stat-edges">__STAT_LINKS__</strong>
+      </div>
+    </div>
+  </div>
+
+  <div class="nav-center">
+    <div class="search-box">
+      <div class="search-icon">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+      </div>
+      <input type="text" id="searchInput" class="search-input" placeholder="搜索技能、MCP、触发词... (按 / 聚焦)" data-i18n-placeholder="search_placeholder" autocomplete="off" spellcheck="false">
+      <kbd class="search-kbd">/</kbd>
+      <button id="searchClear" class="search-clear" title="Clear">✕</button>
+    </div>
+  </div>
+
+  <div class="nav-right">
+    <div class="filter-pills">
+      <button class="filter-btn active" data-filter="all" data-i18n="filter_all">全部</button>
+      <button class="filter-btn" data-filter="skill" data-i18n="filter_skill">仅技能</button>
+      <button class="filter-btn" data-filter="mcp" data-i18n="filter_mcp">仅MCP</button>
+      <button class="filter-btn" data-filter="excluded" data-i18n="filter_excluded">已排除</button>
+    </div>
+
+    <!-- Bilingual Toggle Button -->
+    <button id="btnLang" class="btn btn-lang" title="Toggle Language / 切换语言">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="2" y1="12" x2="22" y2="12"></line>
+        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+      </svg>
+      <span id="langLabel">English</span>
+    </button>
+
+    <!-- Zoom & Physics Controls -->
+    <div class="control-group">
+      <button id="btnZoomIn" class="btn btn-icon" title="Zoom In / 放大">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+      </button>
+      <button id="btnZoomOut" class="btn btn-icon" title="Zoom Out / 缩小">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+      </button>
+      <button id="btnFit" class="btn btn-icon" title="Fit View / 适应视口">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+        </svg>
+      </button>
+      <button id="btnToggleSim" class="btn btn-icon" title="Pause/Play Physics / 暂停物理模拟">
+        <svg id="simPlayIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="6" y="4" width="4" height="16"></rect>
+          <rect x="14" y="4" width="4" height="16"></rect>
+        </svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- Main Canvas SVG -->
+<svg id="graph-svg">
+  <defs>
+    <!-- Background subtle grid -->
+    <pattern id="dot-grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1" fill="rgba(255,255,255,0.06)" />
+    </pattern>
+    <!-- Arrowhead markers -->
+    <marker id="arrow-depends_on" viewBox="0 -5 10 10" refX="22" refY="0" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,-4L10,0L0,4" fill="#c084fc"></path>
+    </marker>
+    <marker id="arrow-collaborates" viewBox="0 -5 10 10" refX="22" refY="0" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,-4L10,0L0,4" fill="#38bdf8"></path>
+    </marker>
+    <marker id="arrow-family" viewBox="0 -5 10 10" refX="22" refY="0" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,-4L10,0L0,4" fill="#fb923c"></path>
+    </marker>
+    <marker id="arrow-overlap" viewBox="0 -5 10 10" refX="22" refY="0" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,-4L10,0L0,4" fill="#94a3b8"></path>
+    </marker>
+    <marker id="arrow-contains" viewBox="0 -5 10 10" refX="22" refY="0" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,-4L10,0L0,4" fill="#34d399"></path>
+    </marker>
+    <marker id="arrow-similar" viewBox="0 -5 10 10" refX="22" refY="0" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,-4L10,0L0,4" fill="#f472b6"></path>
+    </marker>
+    <marker id="arrow-default" viewBox="0 -5 10 10" refX="22" refY="0" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,-4L10,0L0,4" fill="#71717a"></path>
+    </marker>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#dot-grid)" id="canvas-bg"></rect>
+  <g id="graph-container">
+    <g id="links-group"></g>
+    <g id="nodes-group"></g>
+  </g>
+</svg>
+
+<!-- Floating Inspector Sidebar -->
+<aside id="inspector">
+  <!-- Content populated by JavaScript -->
+</aside>
+
+<!-- Floating Legend & Controls (Bottom Left) -->
+<aside id="legend">
+  <div class="legend-header" id="legendHeader">
+    <span data-i18n="legend_title">图例与筛选</span>
+    <span id="legendToggleIcon">▾</span>
+  </div>
+  <div class="legend-body" id="legendBody">
+    <div>
+      <div class="legend-section-title" data-i18n="legend_nodes">节点类型</div>
+      <div class="legend-items">
+        <div class="legend-item"><div class="legend-dot" style="background:#38bdf8;"></div><span data-i18n="type_skill">技能 (Skill)</span></div>
+        <div class="legend-item"><div class="legend-dot" style="background:#f43f5e;"></div><span data-i18n="type_mcp">MCP 工具</span></div>
+        <div class="legend-item"><div class="legend-dot" style="background:#27272a; border:1px dashed #f87171;"></div><span data-i18n="status_excluded">已排除</span></div>
+      </div>
+    </div>
+    <div>
+      <div class="legend-section-title" data-i18n="legend_edges">关系边类型</div>
+      <div class="legend-items" id="legendEdgesContainer">
+        <!-- populated dynamically -->
+      </div>
+    </div>
+    <div class="legend-toggles">
+      <label class="legend-toggle-label">
+        <input type="checkbox" id="toggleExcluded" checked>
+        <span data-i18n="opt_show_excluded">显示已排除技能</span>
+      </label>
+      <label class="legend-toggle-label">
+        <input type="checkbox" id="toggleLabels" checked>
+        <span data-i18n="opt_show_labels">显示节点文字标签</span>
+      </label>
+    </div>
+  </div>
+</aside>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- D3.js v7 CDN -->
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+// Raw Data Injected from Python
+const rawNodes = __DATA_NODES__;
+const rawLinks = __DATA_LINKS__;
+const edgeColors = __DATA_EDGE_COLORS__;
+const edgeTypesSeen = __DATA_EDGE_TYPES__;
+
+// Internationalization Dictionary (中英双语)
+const I18N = {
+  zh: {
+    app_title: "Skill Indexer",
+    stat_skills: "技能",
+    stat_mcps: "MCP / 连接器",
+    stat_edges: "关系",
+    search_placeholder: "搜索技能、MCP、触发词或描述... (按 / 聚焦)",
+    filter_all: "全部",
+    filter_skill: "仅技能",
+    filter_mcp: "仅MCP/连接器",
+    filter_excluded: "已排除",
+    lang_btn: "English",
+    
+    empty_title: "技能拓扑档案",
+    empty_desc: "在画布中点击任意技能或 MCP 节点，即可在此处查看其功能定义、触发词库、排除规则以及 1-Hop 协同联动关联网络。",
+    tips_title: "快捷操作指南",
+    tip_click: "单击节点：聚焦并高亮一度邻居与关联边",
+    tip_dblclick: "双击节点：平滑居中并放大至该节点",
+    tip_drag: "拖拽节点：可自由编排并固定节点位置",
+    tip_search: "搜索框：输入关键字实时筛选高亮，按 Enter 定位",
+    tip_link: "关联穿梭：点击下方关联项可直接平移聚焦至目标",
+    
+    copy_name: "复制名称",
+    copied: "已复制到剪贴板!",
+    type_skill: "技能 (Skill)",
+    type_mcp: "MCP 工具",
+    status_active: "可用状态",
+    status_excluded: "已排除",
+    badge_refs: "含参考文档",
+    excluded_title: "该条目已被策略规则排除",
+    excluded_reason: "排除规则",
+    desc_label: "功能描述",
+    no_desc: "暂无描述信息",
+    triggers_label: "触发词库",
+    no_triggers: "未声明显式触发词",
+    connections_label: "协同联动拓扑网络",
+    no_connections: "当前为孤立节点（暂无上下游关联）",
+    btn_focus: "在画布中居中",
+    
+    desc_mode_zh: "中文",
+    desc_mode_en: "EN",
+    desc_mode_both: "双语对照",
+
+    guide_title: "ℹ️ 拓扑关系手册 (鼠标悬浮关联项可看详情)",
+    guide_toggle: "展开/收起",
+    guide_contains: "组件包含/归属：大技能套件与具体细分子模块的父子归属关系",
+    guide_depends_on: "依赖前置：当前技能正常工作必须依赖的前置底座能力",
+    guide_collaborates: "协同联动：典型上下游流水线协作伙伴，产物相互输入",
+    guide_family: "同族套件：同一工具生态家族，协议命名天然一致",
+    guide_overlap: "功能重叠：职责范围重叠，调度时可二选一避免浪费Token",
+    guide_similar: "语义相似：应用场景或意图触发词高度接近",
+
+    legend_title: "图例与筛选",
+    legend_nodes: "节点类型",
+    legend_edges: "关系边类型 (悬浮查看详情)",
+    opt_show_excluded: "显示已排除技能",
+    opt_show_labels: "显示节点文字标签",
+    
+    edge_depends_on: "依赖前置 (depends_on)",
+    edge_collaborates: "协同联动 (collaborates)",
+    edge_family: "同族套件 (family)",
+    edge_overlap: "功能重叠 (overlap)",
+    edge_contains: "组件包含 (contains)",
+    edge_similar: "语义相似 (similar)",
+    edge_unknown: "关联",
+  },
+  en: {
+    app_title: "Skill Indexer",
+    stat_skills: "Skills",
+    stat_mcps: "MCP & Connectors",
+    stat_edges: "Edges",
+    search_placeholder: "Search skills, MCPs, triggers... (Press / to focus)",
+    filter_all: "All",
+    filter_skill: "Skills",
+    filter_mcp: "MCP / Connectors",
+    filter_excluded: "Excluded",
+    lang_btn: "中文",
+    
+    empty_title: "Skill Node Inspector",
+    empty_desc: "Click any skill or MCP node in the canvas to examine its definitions, trigger keywords, exclusion rules, and 1-hop collaborative network.",
+    tips_title: "Interaction Guide",
+    tip_click: "Single Click: Select & highlight 1-hop neighbors",
+    tip_dblclick: "Double Click: Smoothly zoom & center on node",
+    tip_drag: "Drag: Pin position for custom graph layout",
+    tip_search: "Search bar: Live highlight filter, press Enter to focus",
+    tip_link: "Cross-link: Click any neighbor item to instantly jump",
+    
+    copy_name: "Copy Name",
+    copied: "Copied to clipboard!",
+    type_skill: "Skill",
+    type_mcp: "MCP Tool",
+    status_active: "Active",
+    status_excluded: "Excluded",
+    badge_refs: "Has References",
+    excluded_title: "Item excluded from retrieval",
+    excluded_reason: "Filter Rule",
+    desc_label: "Description",
+    no_desc: "No description provided",
+    triggers_label: "Triggers",
+    no_triggers: "No explicit triggers declared",
+    connections_label: "Synergy & Topological Linkages",
+    no_connections: "Isolated node with no known connections",
+    btn_focus: "Center in View",
+
+    desc_mode_zh: "ZH",
+    desc_mode_en: "EN",
+    desc_mode_both: "Bilingual",
+
+    guide_title: "ℹ️ Topology Guide (Hover items for details)",
+    guide_toggle: "Expand/Collapse",
+    guide_contains: "Contains: Parent suite vs specialized sub-component relation",
+    guide_depends_on: "Depends On: Prerequisite foundation required for execution",
+    guide_collaborates: "Collaborates: Upstream/downstream workflow partners",
+    guide_family: "Family Suite: Same ecosystem suite with shared protocols",
+    guide_overlap: "Overlap: Overlapping scope; interchangeable alternatives",
+    guide_similar: "Similar: High semantic affinity and prompt intent overlap",
+    
+    legend_title: "Legend & Options",
+    legend_nodes: "Node Types",
+    legend_edges: "Relation Types (Hover for details)",
+    opt_show_excluded: "Show Excluded Skills",
+    opt_show_labels: "Show Node Labels",
+    
+    edge_depends_on: "Depends On (depends_on)",
+    edge_collaborates: "Collaboration (collaborates)",
+    edge_family: "Family Suite (family)",
+    edge_overlap: "Overlap (overlap)",
+    edge_contains: "Contains (contains)",
+    edge_similar: "Similarity (similar)",
+    edge_unknown: "Relation",
+  }
+};
+
+// State Management
+// file:// 场景下部分浏览器禁用 localStorage（抛 SecurityError）——必须包一层，否则整页 JS 中断白屏
+function safeStorageGet(key) { try { return localStorage.getItem(key); } catch(e) { return null; } }
+function safeStorageSet(key, val) { try { localStorage.setItem(key, val); } catch(e) {} }
+let currentLang = safeStorageGet("skill_graph_lang") || (navigator.language.startsWith("zh") ? "zh" : "en");
+let selectedNode = null;
+let currentFilter = "all";
+let isSimRunning = true;
+
+function t(key) {
+  return (I18N[currentLang] && I18N[currentLang][key]) || key;
+}
+
+function showToast(msg) {
+  const toast = document.getElementById("toast");
+  toast.innerText = msg;
+  toast.classList.add("show");
+  setTimeout(() => toast.classList.remove("show"), 2000);
+}
+
+function escapeHtml(s) {
+  // 必须转义单引号：onclick='...'（单引号包裹）的插值里，' 能闭合 JS 字符串造成注入
+  if (!s) return "";
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// D3 Setup
+const width = window.innerWidth;
+const height = window.innerHeight;
+const svg = d3.select("#graph-svg").attr("width", width).attr("height", height);
+const container = d3.select("#graph-container");
+
+const zoom = d3.zoom()
+  .scaleExtent([0.1, 8])
+  .on("zoom", (e) => {
+    container.attr("transform", e.transform);
+  });
+svg.call(zoom);
+
+// Node mapping
+const nodeMap = new Map(rawNodes.map(n => [n.id, n]));
+
+// Initialize Simulation
+const sim = d3.forceSimulation(rawNodes)
+  .force("link", d3.forceLink(rawLinks).id(d => d.id).distance(d => 65 + (1 - (d.weight || 0.5)) * 35))
+  .force("charge", d3.forceManyBody().strength(-240))
+  .force("center", d3.forceCenter(width / 2, height / 2))
+  .force("collision", d3.forceCollide().radius(22));
+
+// Draw Links
+const linkGroup = d3.select("#links-group");
+const linkElements = linkGroup.selectAll("line")
+  .data(rawLinks)
+  .join("line")
+  .attr("class", d => "link" + ((d.source.excluded || d.target.excluded) ? " excluded" : ""))
+  .attr("stroke", d => edgeColors[d.type] || "#71717a")
+  .attr("stroke-width", d => Math.max(1.2, (d.weight || 0.5) * 3))
+  .attr("stroke-opacity", 0.45)
+  .attr("marker-end", d => {
+    if (d.direction === "directed" || d.type === "depends_on" || d.type === "contains") {
+      return "url(#arrow-" + (edgeColors[d.type] ? d.type : "default") + ")";
+    }
+    return null;
+  });
+
+// Draw Nodes
+const nodeGroup = d3.select("#nodes-group");
+const nodeElements = nodeGroup.selectAll("g")
+  .data(rawNodes)
+  .join("g")
+  .attr("class", d => "node" + (d.excluded ? " excluded" : ""))
+  .call(d3.drag()
+    .on("start", (e, d) => {
+      if (!e.active && isSimRunning) sim.alphaTarget(0.3).restart();
+      d.fx = d.x;
+      d.fy = d.y;
+    })
+    .on("drag", (e, d) => {
+      d.fx = e.x;
+      d.fy = e.y;
+    })
+    .on("end", (e, d) => {
+      if (!e.active && isSimRunning) sim.alphaTarget(0);
+      d.fx = null;
+      d.fy = null;
+    })
+  );
+
+// Glow ring for selected state
+nodeElements.append("circle")
+  .attr("class", "glow-ring");
+
+// Main Node Circle
+nodeElements.append("circle")
+  .attr("class", "main-circle")
+  .attr("r", d => (d.is_agent || d.type === "agent") ? 8.5 : (d.is_connector ? 7.5 : (d.type === "mcp" ? 6.5 : 8)))
+  .attr("fill", d => {
+    if (d.excluded) return "#27272a";
+    if (d.is_agent || d.type === "agent") return "#7e22ce";
+    if (d.is_connector) return "#047857";
+    return d.type === "mcp" ? "#be123c" : "#0284c7";
+  })
+  .attr("stroke", d => {
+    if (d.excluded) return "#f87171";
+    if (d.is_agent || d.type === "agent") return "#c084fc";
+    if (d.is_connector) return "#34d399";
+    return d.type === "mcp" ? "#f43f5e" : "#38bdf8";
+  })
+  .attr("stroke-width", d => d.excluded ? 1.8 : 1.5)
+  .attr("stroke-dasharray", d => d.excluded ? "3,2" : null)
+  .attr("opacity", d => d.excluded ? 0.45 : 1);
+
+// Node Label Text
+const textElements = nodeElements.append("text")
+  .attr("dx", 13)
+  .attr("dy", 4)
+  .text(d => d.name);
+
+// Simulation Tick
+sim.on("tick", () => {
+  linkElements
+    .attr("x1", d => d.source.x)
+    .attr("y1", d => d.source.y)
+    .attr("x2", d => d.target.x)
+    .attr("y2", d => d.target.y);
+
+  nodeElements.attr("transform", d => `translate(${d.x},${d.y})`);
+});
+
+// Focus / Pan Helpers
+function focusNode(d) {
+  if (!d || d.x === undefined) return;
+  const scale = 1.6;
+  const x = width / 2 - d.x * scale;
+  const y = height / 2 - d.y * scale;
+  svg.transition().duration(650).call(
+    zoom.transform,
+    d3.zoomIdentity.translate(x, y).scale(scale)
+  );
+}
+
+function fitView() {
+  if (!rawNodes.length) {
+    svg.transition().duration(600).call(zoom.transform, d3.zoomIdentity);
+    return;
+  }
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  rawNodes.forEach(n => {
+    if (n.x !== undefined && !isNaN(n.x)) {
+      if (n.x < minX) minX = n.x;
+      if (n.x > maxX) maxX = n.x;
+      if (n.y < minY) minY = n.y;
+      if (n.y > maxY) maxY = n.y;
+    }
+  });
+  if (minX === Infinity || maxX === -Infinity) {
+    svg.transition().duration(600).call(zoom.transform, d3.zoomIdentity);
+    return;
+  }
+  const graphWidth = maxX - minX + 120;
+  const graphHeight = maxY - minY + 120;
+  const midX = (minX + maxX) / 2;
+  const midY = (minY + maxY) / 2;
+  const scale = Math.min(1.2, Math.max(0.18, 0.85 / Math.max(graphWidth / window.innerWidth, graphHeight / window.innerHeight)));
+  const tx = window.innerWidth / 2 - midX * scale;
+  const ty = window.innerHeight / 2 - midY * scale;
+  svg.transition().duration(650).call(
+    zoom.transform,
+    d3.zoomIdentity.translate(tx, ty).scale(scale)
+  );
+}
+
+// Highlight & Selection Logic
+function selectNode(d) {
+  selectedNode = d;
+  nodeElements.classed("selected", n => n.id === d.id);
+
+  // Collect 1-hop neighbors
+  const neighborIds = new Set();
+  neighborIds.add(d.id);
+  rawLinks.forEach(l => {
+    const sId = l.source.id || l.source;
+    const tId = l.target.id || l.target;
+    if (sId === d.id) neighborIds.add(tId);
+    if (tId === d.id) neighborIds.add(sId);
+  });
+
+  // Dim unrelated nodes
+  nodeElements.style("opacity", n => neighborIds.has(n.id) ? (n.excluded ? 0.6 : 1.0) : 0.1);
+
+  // Highlight connected links
+  linkElements
+    .style("opacity", l => {
+      const sId = l.source.id || l.source;
+      const tId = l.target.id || l.target;
+      return (sId === d.id || tId === d.id) ? 0.9 : 0.04;
+    })
+    .style("stroke-width", l => {
+      const sId = l.source.id || l.source;
+      const tId = l.target.id || l.target;
+      return (sId === d.id || tId === d.id) ? Math.max(2.5, (l.weight || 0.5) * 4) : 1;
+    });
+
+  renderInspector(d);
+}
+
+function clearSelection() {
+  selectedNode = null;
+  nodeElements.classed("selected", false);
+  applyCategoryFilter();
+  renderInspector(null);
+}
+
+// Window global for cross-referencing
+window.selectNodeById = function(nodeId) {
+  const target = nodeMap.get(nodeId);
+  if (target) {
+    selectNode(target);
+    focusNode(target);
+  }
+};
+
+window.copyNodeName = function(name) {
+  navigator.clipboard.writeText(name).then(() => {
+    showToast(t("copied"));
+    const copyBtn = document.getElementById("btnCopyInspector");
+    if (copyBtn) {
+      copyBtn.innerText = "✓ " + t("copied");
+      setTimeout(() => {
+        if (copyBtn) copyBtn.innerText = t("copy_name");
+      }, 2000);
+    }
+  }).catch(() => {
+    showToast(name);
+  });
+};
+
+// Click events
+nodeElements.on("click", (e, d) => {
+  e.stopPropagation();
+  selectNode(d);
+});
+
+nodeElements.on("dblclick", (e, d) => {
+  e.stopPropagation();
+  selectNode(d);
+  focusNode(d);
+});
+
+d3.select("#canvas-bg").on("click", () => {
+  clearSelection();
+});
+
+// Relation Metadata & Contextual Tooltip Generator (Zero hardcoding)
+function getRelationMeta(type, isSource, currentName, targetName, lang) {
+  const isZh = lang === "zh";
+  switch (type) {
+    case "contains":
+      if (!isSource) {
+        return {
+          badge: isZh ? "被包含于" : "Contained In",
+          arrow: "←",
+          tooltip: isZh
+            ? `被包含于（子技能归属）：${targetName} 是一个综合大技能（父集），而当前技能 ${currentName} 是它下辖的一个专业子组件。`
+            : `Contained In: ${targetName} is a composite parent skill suite, and ${currentName} is a specialized sub-module under it.`,
+          subdesc: isZh
+            ? `子技能归属：属于 ${targetName} 技能套件的组成部分`
+            : `Sub-component: part of ${targetName} skill suite`
+        };
+      } else {
+        return {
+          badge: isZh ? "包含组件" : "Contains",
+          arrow: "→",
+          tooltip: isZh
+            ? `包含组件（父级下辖）：当前技能 ${currentName} 是一个综合大技能（父集），包含了专业子组件 ${targetName}。`
+            : `Contains: Current skill ${currentName} is a parent skill suite containing specialized sub-component ${targetName}.`,
+          subdesc: isZh
+            ? `父级套件：下辖专业子模块 ${targetName}`
+            : `Parent suite: contains sub-module ${targetName}`
+        };
+      }
+    case "depends_on":
+      if (isSource) {
+        return {
+          badge: isZh ? "依赖前置" : "Depends On",
+          arrow: "→",
+          tooltip: isZh
+            ? `依赖前置（前置底座）：执行当前技能 ${currentName} 需要依赖 ${targetName} 提供的底层能力、产物或前置环境支撑。`
+            : `Depends On: Executing ${currentName} requires prerequisite capabilities, artifacts, or platform support from ${targetName}.`,
+          subdesc: isZh
+            ? `前置依赖：需要 ${targetName} 提供底层能力支撑`
+            : `Prerequisite: relies on ${targetName} for support`
+        };
+      } else {
+        return {
+          badge: isZh ? "被依赖底座" : "Required By",
+          arrow: "←",
+          tooltip: isZh
+            ? `被依赖底座（核心支撑）：当前技能 ${currentName} 作为底层基础底座，被 ${targetName} 依赖调用。`
+            : `Required By: Current skill ${currentName} serves as a foundational dependency required by ${targetName}.`,
+          subdesc: isZh
+            ? `底层底座：为 ${targetName} 提供前置能力支撑`
+            : `Foundation: provides prerequisite capability for ${targetName}`
+        };
+      }
+    case "collaborates":
+      return {
+        badge: isZh ? "协同联动" : "Collaborates",
+        arrow: "↔",
+        tooltip: isZh
+          ? `协同联动（工作流搭档）：${currentName} 与 ${targetName} 构成典型上下游流水线协作伙伴，两者的输入输出可自然衔接。`
+          : `Collaborates: ${currentName} and ${targetName} form a typical upstream/downstream pipeline workflow synergy.`,
+        subdesc: isZh
+          ? `上下游搭档：工作流典型前后置搭配伙伴`
+          : `Workflow partner: frequent pipeline companion`
+      };
+    case "family":
+      return {
+        badge: isZh ? "同族套件" : "Family Suite",
+        arrow: "↔",
+        tooltip: isZh
+          ? `同族套件（演化同源）：${currentName} 与 ${targetName} 同属于相同的工具生态套件，具有一致的命名规范与调用协议。`
+          : `Family Suite: ${currentName} and ${targetName} belong to the same tool ecosystem family sharing common standards.`,
+        subdesc: isZh
+          ? `同源套件：同属统一工具生态，规范互通`
+          : `Same ecosystem: shared family conventions`
+      };
+    case "overlap":
+      return {
+        badge: isZh ? "功能重叠" : "Overlap",
+        arrow: "≈",
+        tooltip: isZh
+          ? `功能重叠（备选互换）：${currentName} 与 ${targetName} 职责范围部分交叠，在调度时可互为备选二选一，避免同时装载浪费上下文。`
+          : `Overlap: ${currentName} and ${targetName} have overlapping capabilities and can be alternatives to avoid context waste.`,
+        subdesc: isZh
+          ? `备选互换：职责部分交叠，调度时可二选一`
+          : `Alternative: overlapping scope, can pick one`
+      };
+    case "similar":
+      return {
+        badge: isZh ? "语义相似" : "Similar",
+        arrow: "≈",
+        tooltip: isZh
+          ? `语义相似（意图相近）：${currentName} 与 ${targetName} 的功能描述或触发词高度相近，容易被相近的用户意图自然语言召回。`
+          : `Similar: ${currentName} and ${targetName} share highly similar semantic intent and trigger contexts.`,
+        subdesc: isZh
+          ? `意图相似：应用场景或意图触发词高度接近`
+          : `Semantic affinity: similar intent triggers`
+      };
+    default:
+      return {
+        badge: (isZh ? "关联 (" : "Relation (") + type + ")",
+        arrow: isSource ? "→" : "←",
+        tooltip: isZh
+          ? `关联关系：${currentName} 与 ${targetName} 存在关联边 (${type})。`
+          : `Relation: ${currentName} and ${targetName} share a connection (${type}).`,
+        subdesc: (isZh ? "关联连接: " : "Connection: ") + type
+      };
+  }
+}
+
+// Global Description & Translation State
+let currentDescMode = safeStorageGet("skill_desc_mode") || (currentLang === "zh" ? "zh" : "en");
+let inspectedNode = null;
+
+function isPrimarilyChinese(text) {
+  if (!text) return false;
+  const zhChars = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
+  const nonSpaceChars = text.replace(/\s+/g, "").length;
+  return (zhChars / Math.max(nonSpaceChars, 1)) > 0.35;
+}
+
+
+window.setDescMode = function(mode) {
+  currentDescMode = mode;
+  safeStorageSet("skill_desc_mode", mode);
+  document.querySelectorAll(".desc-lang-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.getAttribute("data-mode") === mode);
+  });
+  updateDescriptionView();
+};
+
+function updateDescriptionView() {
+  const container = document.getElementById("node-desc-content");
+  if (!container || !inspectedNode) return;
+  const d = inspectedNode;
+  const originalDesc = d.desc || "";
+  if (!originalDesc) {
+    container.innerHTML = `<span style="color:var(--text-dim); font-style:italic;">${t("no_desc")}</span>`;
+    return;
+  }
+  const zhLocal = d.desc_zh || "";  // 仅用 SKILL.md frontmatter 自带的 description_zh，不做在线翻译
+  if (currentDescMode === "en") {
+    container.innerText = originalDesc;
+  } else if (currentDescMode === "zh") {
+    container.innerText = zhLocal || originalDesc;
+  } else {
+    if (zhLocal && zhLocal !== originalDesc) {
+      container.innerHTML = `<div>${escapeHtml(zhLocal)}</div><div class="desc-en-sub">${escapeHtml(originalDesc)}</div>`;
+    } else {
+      container.innerHTML = `<div>${escapeHtml(originalDesc)}</div>`;
+    }
+  }
+}
+
+window.toggleRelationGuide = function() {
+  const body = document.getElementById("relationGuideBody");
+  const arrow = document.getElementById("relationGuideArrow");
+  if (body) {
+    const isHidden = body.style.display === "none";
+    body.style.display = isHidden ? "flex" : "none";
+    if (arrow) arrow.innerText = isHidden ? "▴" : "▾";
+  }
+};
+
+// Render Inspector Card
+function renderInspector(d) {
+  const inspector = document.getElementById("inspector");
+  inspectedNode = d;
+
+  if (!d) {
+    inspector.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon>
+          </svg>
+        </div>
+        <div class="empty-title">${t("empty_title")}</div>
+        <div class="empty-desc">${t("empty_desc")}</div>
+        <div class="tips-card">
+          <div class="tips-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            ${t("tips_title")}
+          </div>
+          <ul class="tips-list">
+            <li><span>•</span> ${t("tip_click")}</li>
+            <li><span>•</span> ${t("tip_dblclick")}</li>
+            <li><span>•</span> ${t("tip_drag")}</li>
+            <li><span>•</span> ${t("tip_search")}</li>
+            <li><span>•</span> ${t("tip_link")}</li>
+          </ul>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  // Find related links
+  const related = rawLinks.filter(l => {
+    const sId = l.source.id || l.source;
+    const tId = l.target.id || l.target;
+    return sId === d.id || tId === d.id;
+  });
+
+  const relItemsHtml = related.length ? related.map(l => {
+    const sId = l.source.id || l.source;
+    const isSource = sId === d.id;
+    const otherNode = isSource ? (l.target.id ? l.target : nodeMap.get(l.target)) : (l.source.id ? l.source : nodeMap.get(l.source));
+    const otherName = otherNode ? otherNode.name : (isSource ? l.target : l.source);
+    const otherId = otherNode ? otherNode.id : (isSource ? l.target : l.source);
+    const edgeColor = edgeColors[l.type] || "#71717a";
+    const meta = getRelationMeta(l.type, isSource, d.name, otherName, currentLang);
+    return `
+      <div class="conn-item" onclick="window.selectNodeById('${escapeHtml(otherId)}')" title="${escapeHtml(meta.tooltip)}">
+        <div class="conn-top">
+          <div class="conn-left">
+            <span class="conn-tag" style="background:${edgeColor}20; color:${edgeColor}; border:1px solid ${edgeColor}50" title="${escapeHtml(meta.tooltip)}">${escapeHtml(meta.badge)}</span>
+            <span style="color:var(--text-dim); font-size:11px;">${meta.arrow}</span>
+            <span class="conn-name" title="${escapeHtml(otherName)}">${escapeHtml(otherName)}</span>
+          </div>
+          <span style="color:var(--text-dim); font-size:11px;">${l.weight ? Math.round(l.weight * 100) + '%' : ''}</span>
+        </div>
+        <div class="conn-subdesc">${escapeHtml(meta.subdesc)}</div>
+      </div>
+    `;
+  }).join("") : `<div style="font-size:12px; color:var(--text-dim); font-style:italic;">${t("no_connections")}</div>`;
+
+  let alertExcludedHtml = "";
+  if (d.excluded) {
+    alertExcludedHtml = `
+      <div class="alert-excluded">
+        <div class="alert-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          ${t("excluded_title")}
+        </div>
+        <div class="alert-desc">${t("excluded_reason")}: ${escapeHtml(d.exclude_reason || "Rule matched")}</div>
+      </div>
+    `;
+  }
+
+  const triggersHtml = (d.triggers && d.triggers.length) ? `
+    <div>
+      <div class="section-label">${t("triggers_label")}</div>
+      <div class="trigger-tags">
+        ${d.triggers.map(tr => `<span class="trigger-pill">${escapeHtml(tr)}</span>`).join("")}
+      </div>
+    </div>
+  ` : "";
+
+  inspector.innerHTML = `
+    <div class="inspector-header">
+      <div class="node-title-group">
+        <div class="node-name">
+          <span>${d.is_agent ? '🤖' : d.is_connector ? '🔌' : d.type === 'mcp' ? '⚡' : '🧩'}</span>
+          <span>${escapeHtml(d.clean_name || d.name)}</span>
+        </div>
+        <div class="badges-row">
+          <span class="badge ${d.is_agent ? 'badge-agent' : d.is_connector ? 'badge-connector' : d.type === 'mcp' ? 'badge-mcp' : 'badge-skill'}">
+            ${d.is_agent ? (currentLang === 'zh' ? '数字员工' : 'Agent') : d.is_connector ? (currentLang === 'zh' ? '连接器' : 'Connector') : d.type === 'mcp' ? t("type_mcp") : t("type_skill")}
+          </span>
+          <span class="badge ${d.excluded ? 'badge-excluded' : 'badge-active'}">
+            ${d.excluded ? t("status_excluded") : t("status_active")}
+          </span>
+          ${d.has_references ? `<span class="badge badge-refs">${t("badge_refs")}</span>` : ''}
+        </div>
+      </div>
+      <button class="btn-close" onclick="clearSelection()" title="Close">✕</button>
+    </div>
+
+    ${alertExcludedHtml}
+
+    <div>
+      <div class="section-label">
+        <span>${t("desc_label")}</span>
+        <div class="desc-lang-switch">
+          <span class="desc-lang-btn ${currentDescMode === 'zh' ? 'active' : ''}" data-mode="zh" onclick="setDescMode('zh')">${t("desc_mode_zh")}</span>
+          <span style="color:var(--border-color); font-size:9px;">|</span>
+          <span class="desc-lang-btn ${currentDescMode === 'en' ? 'active' : ''}" data-mode="en" onclick="setDescMode('en')">${t("desc_mode_en")}</span>
+          <span style="color:var(--border-color); font-size:9px;">|</span>
+          <span class="desc-lang-btn ${currentDescMode === 'both' ? 'active' : ''}" data-mode="both" onclick="setDescMode('both')">${t("desc_mode_both")}</span>
+        </div>
+      </div>
+      <div class="section-content" id="node-desc-content"></div>
+    </div>
+
+    ${triggersHtml}
+
+    <div>
+      <div class="section-label">
+        <span>${t("connections_label")}</span>
+        <span style="font-size:10px; color:var(--text-dim);">${related.length}</span>
+      </div>
+      <div class="relation-guide-box">
+        <div class="relation-guide-header" onclick="toggleRelationGuide()" title="${t('guide_toggle')}">
+          <span>${t("guide_title")}</span>
+          <span id="relationGuideArrow">▾</span>
+        </div>
+        <div class="relation-guide-body" id="relationGuideBody" style="display:none;">
+          <div class="guide-row"><strong>${t("edge_contains")}:</strong> <span>${t("guide_contains")}</span></div>
+          <div class="guide-row"><strong>${t("edge_depends_on")}:</strong> <span>${t("guide_depends_on")}</span></div>
+          <div class="guide-row"><strong>${t("edge_collaborates")}:</strong> <span>${t("guide_collaborates")}</span></div>
+          <div class="guide-row"><strong>${t("edge_family")}:</strong> <span>${t("guide_family")}</span></div>
+          <div class="guide-row"><strong>${t("edge_overlap")}:</strong> <span>${t("guide_overlap")}</span></div>
+          <div class="guide-row"><strong>${t("edge_similar")}:</strong> <span>${t("guide_similar")}</span></div>
+        </div>
+      </div>
+      <div class="connections-list">
+        ${relItemsHtml}
+      </div>
+    </div>
+
+    <div class="inspector-actions">
+      <button class="btn" id="btnCopyInspector" onclick="window.copyNodeName('${escapeHtml(d.name)}')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+        ${t("copy_name")}
+      </button>
+      <button class="btn" onclick="focusNode(selectedNode)">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        ${t("btn_focus")}
+      </button>
+    </div>
+  `;
+
+  updateDescriptionView();
+}
+
+// Category Filter Handling
+function applyCategoryFilter() {
+  const showExcluded = document.getElementById("toggleExcluded").checked;
+  const q = document.getElementById("searchInput").value.trim().toLowerCase();
+
+  nodeElements.style("display", d => {
+    if (d.excluded && !showExcluded) return "none";
+    if (currentFilter === "skill" && d.type !== "skill") return "none";
+    if (currentFilter === "mcp" && d.type !== "mcp") return "none";
+    if (currentFilter === "excluded" && !d.excluded) return "none";
+    return "";
+  });
+
+  linkElements.style("display", d => {
+    const sNode = d.source.id ? d.source : nodeMap.get(d.source);
+    const tNode = d.target.id ? d.target : nodeMap.get(d.target);
+    const sEx = sNode ? sNode.excluded : false;
+    const tEx = tNode ? tNode.excluded : false;
+    if ((sEx || tEx) && !showExcluded) return "none";
+    if (currentFilter === "skill" && (sNode.type !== "skill" || tNode.type !== "skill")) return "none";
+    if (currentFilter === "mcp" && (sNode.type !== "mcp" || tNode.type !== "mcp")) return "none";
+    if (currentFilter === "excluded" && (!sEx && !tEx)) return "none";
+    return "";
+  });
+
+  // Apply search query opacity if query exists
+  if (q) {
+    const matched = new Set();
+    rawNodes.forEach(n => {
+      const matchName = n.name.toLowerCase().includes(q);
+      const matchDesc = (n.desc || "").toLowerCase().includes(q);
+      const matchTrig = (n.triggers || []).some(tr => tr.toLowerCase().includes(q));
+      if (matchName || matchDesc || matchTrig) matched.add(n.id);
+    });
+
+    nodeElements.style("opacity", n => matched.has(n.id) ? (n.excluded ? 0.7 : 1.0) : 0.08);
+    linkElements.style("opacity", l => {
+      const sId = l.source.id || l.source;
+      const tId = l.target.id || l.target;
+      return (matched.has(sId) && matched.has(tId)) ? 0.8 : 0.03;
+    });
+  } else if (!selectedNode) {
+    nodeElements.style("opacity", d => d.excluded ? 0.45 : 1.0);
+    linkElements.style("opacity", 0.45).style("stroke-width", d => Math.max(1.2, (d.weight || 0.5) * 3));
+  }
+}
+
+// Search Handling
+const searchInput = document.getElementById("searchInput");
+const searchClear = document.getElementById("searchClear");
+
+searchInput.addEventListener("input", function() {
+  const q = this.value.trim();
+  searchClear.style.display = q ? "flex" : "none";
+  applyCategoryFilter();
+});
+
+searchClear.addEventListener("click", () => {
+  searchInput.value = "";
+  searchClear.style.display = "none";
+  applyCategoryFilter();
+  searchInput.focus();
+});
+
+searchInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    const q = searchInput.value.trim().toLowerCase();
+    if (!q) return;
+    const firstMatch = rawNodes.find(n =>
+      n.name.toLowerCase().includes(q) ||
+      (n.desc || "").toLowerCase().includes(q) ||
+      (n.triggers || []).some(tr => tr.toLowerCase().includes(q))
+    );
+    if (firstMatch) {
+      selectNode(firstMatch);
+      focusNode(firstMatch);
+    }
+  }
+  if (e.key === "Escape") {
+    searchInput.value = "";
+    searchClear.style.display = "none";
+    applyCategoryFilter();
+    searchInput.blur();
+  }
+});
+
+// Keyboard shortcut `/` to focus search
+document.addEventListener("keydown", (e) => {
+  if (e.key === "/" && document.activeElement !== searchInput) {
+    e.preventDefault();
+    searchInput.focus();
+  }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+    e.preventDefault();
+    searchInput.focus();
+  }
+});
+
+// Controls & Buttons Setup
+document.getElementById("btnZoomIn").addEventListener("click", () => {
+  svg.transition().duration(300).call(zoom.scaleBy, 1.3);
+});
+document.getElementById("btnZoomOut").addEventListener("click", () => {
+  svg.transition().duration(300).call(zoom.scaleBy, 0.77);
+});
+document.getElementById("btnFit").addEventListener("click", fitView);
+
+document.getElementById("btnToggleSim").addEventListener("click", function() {
+  isSimRunning = !isSimRunning;
+  if (isSimRunning) {
+    sim.alphaTarget(0.1).restart();
+    this.style.color = "var(--text-main)";
+    showToast(currentLang === "zh" ? "模拟已恢复" : "Simulation Resumed");
+  } else {
+    sim.stop();
+    this.style.color = "var(--accent-amber)";
+    showToast(currentLang === "zh" ? "模拟已暂停" : "Simulation Paused");
+  }
+});
+
+// Filter Buttons
+document.querySelectorAll(".filter-btn").forEach(btn => {
+  btn.addEventListener("click", function() {
+    document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+    this.classList.add("active");
+    currentFilter = this.getAttribute("data-filter");
+    applyCategoryFilter();
+  });
+});
+
+// Excluded & Labels Toggles
+document.getElementById("toggleExcluded").addEventListener("change", applyCategoryFilter);
+document.getElementById("toggleLabels").addEventListener("change", function() {
+  textElements.style("display", this.checked ? "" : "none");
+});
+
+// Legend Collapsible
+const legendHeader = document.getElementById("legendHeader");
+const legendBody = document.getElementById("legendBody");
+const legendToggleIcon = document.getElementById("legendToggleIcon");
+let legendCollapsed = false;
+legendHeader.addEventListener("click", () => {
+  legendCollapsed = !legendCollapsed;
+  legendBody.style.display = legendCollapsed ? "none" : "flex";
+  legendToggleIcon.innerText = legendCollapsed ? "▸" : "▾";
+});
+
+// Render Dynamic Legend for Edge Types
+function renderLegendEdges() {
+  const container = document.getElementById("legendEdgesContainer");
+  // 图例说明直接复用 I18N 的 guide_<type> 文案——此前这里另写了两份几乎逐字相同的
+  // edgeTooltips 字典（中英各一），改一处漏两处。
+
+  container.innerHTML = edgeTypesSeen.map(type => {
+    const col = edgeColors[type] || "#71717a";
+    const labelKey = "edge_" + type;
+    const label = t(labelKey) !== labelKey ? t(labelKey) : type;
+    const guideKey = "guide_" + type;
+    const tip = t(guideKey) !== guideKey ? t(guideKey) : label;
+    return `
+      <div class="legend-item" title="${escapeHtml(tip)}">
+        <div class="legend-line" style="background:${col};"></div>
+        <span>${escapeHtml(label)}</span>
+      </div>
+    `;
+  }).join("");
+}
+
+// Language Switcher Function
+function setLanguage(lang) {
+  currentLang = lang;
+  safeStorageSet("skill_graph_lang", lang);
+
+  // Update button label
+  document.getElementById("langLabel").innerText = t("lang_btn");
+
+  // Update static elements with data-i18n
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    const key = el.getAttribute("data-i18n");
+    el.innerText = t(key);
+  });
+
+  // Update placeholder
+  document.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
+    const key = el.getAttribute("data-i18n-placeholder");
+    el.setAttribute("placeholder", t(key));
+  });
+
+  // Also default desc mode if user hasn't explicitly set it
+  if (!safeStorageGet("skill_desc_mode")) {
+    currentDescMode = lang === "zh" ? "zh" : "en";
+  }
+
+  renderLegendEdges();
+  renderInspector(selectedNode);
+}
+
+document.getElementById("btnLang").addEventListener("click", () => {
+  setLanguage(currentLang === "zh" ? "en" : "zh");
+  showToast(currentLang === "zh" ? "已切换为简体中文" : "Switched to English");
+});
+
+// Initial Render
+setLanguage(currentLang);
+renderInspector(null);
+setTimeout(fitView, 500);
+
+</script>
+</body>
+</html>

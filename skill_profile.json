@@ -1,0 +1,19 @@
+{
+  "fixed_roots": [],
+  "only_fixed_roots": false,
+  "exclude_skills": [],
+  "pinned_skills": [],
+  "pinned_mcps": [],
+  "user_directives": [],
+  "retrieval_quota": {
+    "top_k": 8,
+    "min_score": 0.35,
+    "favorite_boost": 3.0
+  },
+  "proactive_update": {
+    "enabled": true,
+    "interval_seconds": 300,
+    "auto_promote_frequent_skills": true,
+    "frequent_threshold": 3
+  }
+}
