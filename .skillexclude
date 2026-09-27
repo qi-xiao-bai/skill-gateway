@@ -1,0 +1,13 @@
+# .skillexclude
+# 技能排除规则清单（支持 glob 通配符匹配，按技能名称判定）
+# 被排除的技能不会被 search / chat 检索推荐，不会进入 pipeline 流水线编排
+# 但会在 dashboard HTML 图谱中以专属红色虚线与半透明状态高亮展示，并提供显隐切换开关
+#
+# 示例规则（按需取消注释或追加）：
+# test-*
+# *mock*
+# *deprecated*
+# draft-*
+# weather
+# *diagram*
+

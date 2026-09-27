@@ -1,0 +1,46 @@
+# .skillignore —— 扫描技能时"要跳过哪些目录"的规则文件（gitignore 语法）
+#
+# 为什么有这个文件：跳哪些目录不该写死在代码里。放在技能根目录，用户自己就能改，
+# 不用碰 scripts/。本文件整个是注释、**不影响默认行为**——想加规则就照下面示例取消注释。
+#
+# 规则怎么叠加：内置默认 → 本文件。本文件在后，所以可以用 `!` 把被默认跳过的目录重新纳入。
+#
+# 语法
+#   pattern        匹配任意层级的同名目录/文件（如 node_modules）
+#   dir/           只匹配目录
+#   /pattern       从技能根目录起锚定（不是任意层级）
+#   a/**/b         * 和 ? 通配，** 可跨层级
+#   !pattern       否定：重新纳入（逐条匹配，**最后一条命中的规则说了算**）
+#   # 开头          注释；空行忽略
+#
+# 内置默认（已生效，列在这里供参考，无需重复写）：
+#   .git  .svn  .hg  node_modules  __pycache__  .venv  venv  .idea  .vscode  dist  build
+#   内置默认**故意不跳过隐藏目录**——像 .minimax-skills 这类隐藏包里装的是真技能，要收进来。
+#
+# 注意：`!` 只能把"整个被跳过的目录"重新纳入（如 `!dist`）；目录一旦被跳过就不再往下走，
+#      所以目录**里面**某个子项无法单独再纳入——这条和 git 的 ignore 行为一致。
+#
+# 示例（按需取消注释）
+# !dist                      # 反向：不再跳过 dist（用于撤销上面的内置默认）
+# */backup/
+# *.bak
+# tmp/
+
+# ── 产物文件（索引/缓存/仪表盘）：不入包，统一输出至 output/ 目录 ──
+output/
+skill-index.json
+skill-index.min.json
+skill-index.llms.txt
+skill-content-index.json
+skill-content-terms.json
+skills.edges.json
+skills.index.csv
+skills.index.md
+skills.index.txt
+skills.L0.txt
+skills.L1.txt
+skills.L2.map.json
+catalog.md
+boot.md
+skill-dashboard.html
+.pytest_cache/

@@ -1,0 +1,12 @@
+# 运行时产物（clean 命令名单之外的隔离区，也不入库）
+output/
+
+# 桥接镜像（platform_bridge 落的易失层，可一键重建）
+inputs/platform_mirror/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 本机用户态文件变更不入库（skill_profile.json 保留默认模板，运行时改动请勿提交）
