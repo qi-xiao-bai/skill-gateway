@@ -1,5 +1,9 @@
 # Skill-Indexer 技能调度与编排网关开发设计文档
 
+> **历史开发文档**（v2.0，2026-09-23）。文中"四阶段固定链路、生命周期拓扑模型、
+> 提速百分比"等属于**当时的设计与预期**；v3 起编排完全由图谱拓扑驱动、零硬编码模板，
+> 并行候选如实标注。现行行为以 `SKILL.md`、`README` 与 `references/` 为准。
+
 > **文档路径**：`docs/content-index-dev.md`  
 > **所属项目**：`skill-indexer`（元技能：全局技能调度、代理直达与图谱串联编排网关）  
 > **版本**：v2.0 (Dual-Mode Orchestration Release)  
