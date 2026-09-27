@@ -103,8 +103,7 @@ index ─▶ audit ─▶ relate ─▶ orchestrate   skill-indexer（装完之�
 [命令手册（Agent 执行手册）](references/commands.md) ·
 [索引格式](references/index-format.md) ·
 [治理契约](references/governance.md) ·
-[完整中文手册](使用说明.md) ·
-[开发文档](docs/)
+[完整中文手册](使用说明.md)
 
 ## 致谢
 

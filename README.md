@@ -119,8 +119,7 @@ read command builds the index; everything after is mtime-incremental. Format det
 [Command reference (agent execution manual)](references/commands.md) ·
 [Index format](references/index-format.md) ·
 [Governance contract](references/governance.md) ·
-[Full Chinese manual](使用说明.md) ·
-[Development notes](docs/)
+[Full Chinese manual](使用说明.md)
 
 ## Attribution
 
