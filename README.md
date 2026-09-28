@@ -15,6 +15,10 @@
 
 ---
 
+![skill-indexer knowledge graph — 1,000 skills, 1,679 edges, rendered locally](.github/assets/dashboard.png)
+
+---
+
 Once an agent's skill library grows past a few dozen skills, three things break:
 **selection becomes guesswork**, **context gets eaten alive** (hundreds of SKILL.md
 full texts), and **multi-skill tasks have no conductor**.

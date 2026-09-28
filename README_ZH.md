@@ -15,6 +15,10 @@
 
 ---
 
+![skill-indexer knowledge graph — 1,000 skills, 1,679 edges, rendered locally](.github/assets/dashboard.png)
+
+---
+
 当 Agent 的技能库超过几十个，三个问题立刻出现：**不知道该用哪个**（选型靠猜）、
 **上下文被吃光**（几百个 SKILL.md 全文常驻）、**多技能任务没人串**（各干各的）。
 
