@@ -15,7 +15,7 @@
 
 ---
 
-![skill-indexer knowledge graph — 1,000 skills, 1,679 edges, rendered locally](.github/assets/dashboard.png)
+![离线图谱面板聚焦视图：linkfox 技能族搜索高亮，右侧为节点档案（提取/依赖/触发词）](.github/assets/dashboard.png)
 
 ---
 

@@ -15,7 +15,7 @@
 
 ---
 
-![skill-indexer knowledge graph — 1,000 skills, 1,679 edges, rendered locally](.github/assets/dashboard.png)
+![Focused view of the offline dashboard: the `linkfox` skill family, search-highlighted, node dossier on the right](.github/assets/dashboard.png)
 
 ---
 
