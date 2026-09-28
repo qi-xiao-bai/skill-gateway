@@ -101,9 +101,12 @@ def enumerate_skill_md(broad="auto"):
 
 
 def make_skill_entry(skill_dir, sk_path, source, mtime=None):
-    """解析一个技能目录，产出索引记录。"""
-    nm, desc = skillmd.parse_skill_md(sk_path)
-    nm = nm or os.path.basename(skill_dir)
+    """解析一个技能目录，产出索引记录。
+    用 parse_skill_meta（而非 parse_skill_md）：多提取 description_zh/description_en——
+    有双语 frontmatter 的技能才能被中文 query 检索到（跨语言可发现性）。"""
+    meta = skillmd.parse_skill_meta(sk_path)
+    nm = meta.get("name") or os.path.basename(skill_dir)
+    desc = meta.get("description") or meta.get("description_zh") or ""
     if mtime is None:
         try:
             mtime = int(os.path.getmtime(sk_path))
@@ -111,16 +114,20 @@ def make_skill_entry(skill_dir, sk_path, source, mtime=None):
             mtime = 0
     has_ref = any(os.path.isdir(os.path.join(skill_dir, x))
                   for x in ("references", "scripts", "assets", "reference"))
-    return {
+    entry = {
         "name": nm,
-        "description": desc or "",
-        "triggers": skillmd.extract_triggers(desc or ""),
+        "description": desc,
+        "triggers": skillmd.extract_triggers(desc),
         "type": "skill",
         "path": skill_dir,
         "has_references": has_ref,
         "source": source,
         "mtime": mtime,
     }
+    zh = meta.get("description_zh")
+    if zh and zh != desc:
+        entry["description_zh"] = zh
+    return entry
 
 
 def scan_skills(broad="auto"):

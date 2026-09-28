@@ -14,6 +14,42 @@ from paths import (
 MAX_RETRIEVAL_TOP = 20  # 全局检索硬上限，防止超大列表塞爆上下文
 MIN_RELEVANCE_SCORE = 0.35  # 最低相关性得分阈值
 IDF_CAP = 25.0  # 单词证据贡献上限：一个稀有词组不该独自扛起整个相关度
+EVIDENCE_MIN_WEIGHT = 6.0  # 独立证据的 IDF 合计下限：高频词组合（"标签+当前"）不许凑数
+
+
+def _maximal_evidence(overlap, query):
+    """同源归组的极大共现证据。
+    剔除两类冗余 gram，保留真正独立的证据词：
+    1) 字符串包含：t 是某个更长共现词的子串（2026-09-25 龙易查 6298 分假第一）；
+    2) 同源区间：t 在 query 原文中的出现区间与更长 gram o 高度重叠（超过 t 长度一半）
+       —— "本地仓库"的 本地仓/地仓库/库里 互不包含却是同一词组的碎片，
+       此前各算一份证据（2026-09-28 实测：wps-knowledgebase 靠"地仓库+本地仓+库里"75.5 分假命中）。
+    等长时按字典序保留较小者，保证结果稳定确定。"""
+    ql = query.lower()
+    pos = {}
+    for t in overlap:
+        i = ql.find(t)
+        if i >= 0:
+            pos[t] = (i, i + len(t))
+    out = []
+    for t in overlap:
+        redundant = False
+        for o in overlap:
+            if o == t:
+                continue
+            if t in o:
+                redundant = True
+                break
+            tp, op = pos.get(t), pos.get(o)
+            if tp and op:
+                inter = min(tp[1], op[1]) - max(tp[0], op[0])
+                longer = len(o) > len(t) or (len(o) == len(t) and o < t)
+                if longer and inter * 2 > min(len(t), len(o)):
+                    redundant = True
+                    break
+        if not redundant:
+            out.append(t)
+    return out
 
 
 def terms(text):
@@ -28,8 +64,10 @@ def terms(text):
 
 
 def entry_terms(e):
+    # description_zh 一并参与分词：双语 frontmatter 的技能才能被中文 query 命中
     return terms(
-        e["name"] + " " + e["description"] + " " + " ".join(e.get("triggers") or [])
+        e["name"] + " " + e["description"] + " " + (e.get("description_zh") or "")
+        + " " + " ".join(e.get("triggers") or [])
     )
 
 
@@ -69,6 +107,9 @@ def search(entries, query, top=None, cli_excludes=None, include_excluded=False):
 
     pinned_set = get_pinned_skills()
     weights = idf(entries)
+    # 证据质量门槛随库规模缩放：大库（N≥200）用满 EVIDENCE_MIN_WEIGHT 拦高频凑数；
+    # 小库 IDF 天花板低（2 条目的库罕见词也只有 ~1.7），按比例缩放避免全库出局
+    gate = EVIDENCE_MIN_WEIGHT * min(1.0, max(len(entries), 1) / 200.0)
     scored = []
     for e in entries:
         ename = e.get("name", "")
@@ -87,13 +128,18 @@ def search(entries, query, top=None, cli_excludes=None, include_excluded=False):
         if not overlap:
             continue
         name_hit = bool(overlap & terms(ename))
-        # 极大共现项：被更长共现词包含的短 gram 不重复计分。
-        # 否则一个词组会被拆成 数据/索引/数据索/据索引… 多个"假证据"撑爆得分，
-        # 让只蹭到一个词组的无关技能排到榜首（2026-09-25 实测：龙易查 6298 分假第一）。
-        maximal = [t for t in overlap if not any(t != o and t in o for o in overlap)]
-        if len(maximal) < 2 and not name_hit:
-            continue  # 噪声过滤：至少 2 个互不包含的独立共现证据，单词组蹭词不算
-        score = sum(min(weights.get(t, 0.1), IDF_CAP) for t in maximal)
+        # 极大共现项（同源归组版）：除"被更长 gram 字符串包含"外，
+        # 在 query 原文中出现区间被更长 gram 完全覆盖的碎片也算同一词组的冗余证据——
+        # 否则"本地仓库"会拆成 本地仓/地仓库/库里 多个互不包含的相邻 gram 全部计分，
+        # 无关技能靠一个词组蹭出高分（2026-09-28 实测：wps-knowledgebase 靠"地仓库+本地仓+库里"75.5 分假命中）。
+        maximal = _maximal_evidence(overlap, query)
+        # 证据质量门槛（随库规模相对化）：同源归并后"单概念 query"只剩 1 个证据是正常现象，
+        # 不再用"≥2 证据"硬拦；改为要求证据 IDF 合计达标——大库拦"标签+当前"高频凑数（绝对值 6.0），
+        # 小库（N<200）按比例缩放门槛，否则小库 IDF 天花板只有 ~2、门槛永远不可达。
+        ev_weight = sum(min(weights.get(t, 0.1), IDF_CAP) for t in maximal)
+        if ev_weight < gate and not name_hit:
+            continue
+        score = ev_weight
         if name_hit:
             score += 3
         if e.get("has_references"):
