@@ -2,6 +2,8 @@
 # retrieval.py - 关键词排序检索（中文 2/3-gram + 英文词，IDF 加权）+ 关系边(ID+edges) + 相关技能
 # created 2026-09-16 qjl
 # updated 2026-09-16 qjl: 新增稳定 ID 与关系边(overlap/family)，把"相似技能"从现算改为可存储的图
+# updated 2026-09-30 qjl: 证据词按命中位置加权(名称/触发词/仅描述) + 名称命中加分按稀有度缩放——
+# 真领域词被 IDF_CAP 拉平后靠位置与稀有度找回，无关技能堆描述碎片不再霸榜
 import re
 
 from paths import (
@@ -13,8 +15,13 @@ from paths import (
 
 MAX_RETRIEVAL_TOP = 20  # 全局检索硬上限，防止超大列表塞爆上下文
 MIN_RELEVANCE_SCORE = 0.35  # 最低相关性得分阈值
+TIE_GAP_RATIO = 0.95  # 并列候选判定：得分达到 Top1 的 95% 即视为"打分高度接近"，交人工确认
 IDF_CAP = 25.0  # 单词证据贡献上限：一个稀有词组不该独自扛起整个相关度
 EVIDENCE_MIN_WEIGHT = 6.0  # 独立证据的 IDF 合计下限：高频词组合（"标签+当前"）不许凑数
+LOC_NAME = 1.0  # 证据词命中在名称里：最强信号，全额计分
+LOC_TRIGGER = 0.75  # 证据词命中在触发词里
+LOC_DESC = 0.5  # 证据词仅命中在描述正文里（碎片噪声的主要来源，减半计分）
+NAME_HIT_FACTOR = 2.0  # 名称命中加分 = min(命中词IDF, IDF_CAP) × 本系数（上限 +50，调参范围 1.5-2.5）
 
 
 def _maximal_evidence(overlap, query):
@@ -52,6 +59,33 @@ def _maximal_evidence(overlap, query):
     return out
 
 
+def _evidence_weight(maximal, name_terms_hit, trig_terms_hit, weights):
+    """证据权重 = Σ min(IDF, IDF_CAP) × 命中位置系数（名称 > 触发词 > 仅描述）。
+    IDF_CAP 会把真领域词（salesforce df=3）和泛化碎片（失败 df=6）拉平成同一权重，
+    位置系数负责区分证据质量：名称命中是强信号、描述碎片是噪声主要来源
+    （2026-09-30 实测：无关技能堆描述碎片 63.5 分压过名称命中的正解 28.5 分）。"""
+    total = 0.0
+    for t in maximal:
+        if t in name_terms_hit:
+            loc = LOC_NAME
+        elif t in trig_terms_hit:
+            loc = LOC_TRIGGER
+        else:
+            loc = LOC_DESC
+        total += min(weights.get(t, 0.1), IDF_CAP) * loc
+    return total
+
+
+def _name_bonus(name_terms_hit, weights):
+    """名称命中加分，按命中词稀有度缩放（红线3"点名仅作高权重提示"），
+    上限 IDF_CAP × NAME_HIT_FACTOR。固定 +3 时代 df=3 的真领域词和堆碎片的
+    垃圾几乎同分（2026-09-30 实测 salesforce-develop 28.5 分被挤到 #21 开外）。"""
+    if not name_terms_hit:
+        return 0.0
+    best = max(name_terms_hit, key=lambda t: weights.get(t, 0.1))
+    return min(weights.get(best, 0.1), IDF_CAP) * NAME_HIT_FACTOR
+
+
 def terms(text):
     """抽取检索词：英文/数字词(len>=2) + 中文二元/三元组；丢弃单字以降低噪声。"""
     text = text.lower()
@@ -81,10 +115,14 @@ def idf(entries):
     return {t: max(0.1, 1.0 + (N - df[t] + 0.5) / (df[t] + 0.5)) for t in df}
 
 
-def search(entries, query, top=None, cli_excludes=None, include_excluded=False):
-    """关键词排序检索（中文 2/3-gram + 英文词，IDF 加权 + Profile置顶提权）。
+def search(entries, query, top=None, cli_excludes=None, include_excluded=False,
+           include_off_list=False, agent_only=False):
+    """关键词排序检索（中文 2/3-gram + 英文词，IDF 加权 + 命中位置加权 + Profile置顶提权）。
     - 检索打分 100% 全量覆盖（保证查全率）
-    - 排除过滤：过滤命中 .skillexclude / config / profile / CLI 的条目
+    - 位置加权：证据词命中在名称/触发词/仅描述，分别按 LOC_NAME/LOC_TRIGGER/LOC_DESC 系数计分
+    - 排除过滤：过滤命中 .skillexclude / config / profile / CLI 的条目；
+      include_off_list=True 时放行 visibility=off-list（平台未绑定，仅全量审计视图），
+      其余 excluded（.skillexclude 规则 / blocked）仍被过滤
     - 置顶提权：命中 pinned_skills 的得分乘 (1 + favorite_boost/10)——归一化乘法，
       加法 +3 在长尾低分段会压倒相关性、在 IDF 高分段又近乎无效
     - 配额硬顶：输出最多不超过 MAX_RETRIEVAL_TOP (20 条)
@@ -102,7 +140,7 @@ def search(entries, query, top=None, cli_excludes=None, include_excluded=False):
     q = terms(query)
     if not q:
         return _single_char_search(
-            entries, query, top, cli_excludes, include_excluded
+            entries, query, top, cli_excludes, include_excluded, agent_only
         )
 
     pinned_set = get_pinned_skills()
@@ -111,23 +149,33 @@ def search(entries, query, top=None, cli_excludes=None, include_excluded=False):
     # 小库 IDF 天花板低（2 条目的库罕见词也只有 ~1.7），按比例缩放避免全库出局
     gate = EVIDENCE_MIN_WEIGHT * min(1.0, max(len(entries), 1) / 200.0)
     scored = []
+    max_ev = 0.0  # 剪枝基准：scored 中的最大证据权重（加分/提权之前）
     for e in entries:
         ename = e.get("name", "")
-        # 排除检查
+        # 排除检查（off-list 仅在 include_off_list=True 的全量审计视图放行）
         if not include_excluded:
-            if e.get("excluded"):
+            if e.get("excluded") and not (
+                include_off_list and e.get("visibility") == "off-list"
+            ):
                 continue
             is_ex, _ = is_skill_excluded(ename, cli_excludes)
             if is_ex:
                 continue
-        # 防自环：排除 skill-indexer 自身
-        if ename == "skill-indexer":
+        # Agent 绑定口径（--agent 收窄，非默认）：未绑定当前 Agent 的技能不出现
+        if agent_only and e.get("agent_bound") is False:
+            continue
+        # 防自环：排除 skill-gateway 自身
+        if ename == "skill-gateway":
             continue
 
         overlap = q & entry_terms(e)
         if not overlap:
             continue
-        name_hit = bool(overlap & terms(ename))
+        ename_terms = terms(ename)
+        etrig_terms = terms(" ".join(e.get("triggers") or []))
+        name_terms_hit = overlap & ename_terms
+        trig_terms_hit = (overlap & etrig_terms) - name_terms_hit
+        name_hit = bool(name_terms_hit)
         # 极大共现项（同源归组版）：除"被更长 gram 字符串包含"外，
         # 在 query 原文中出现区间被更长 gram 完全覆盖的碎片也算同一词组的冗余证据——
         # 否则"本地仓库"会拆成 本地仓/地仓库/库里 多个互不包含的相邻 gram 全部计分，
@@ -136,12 +184,10 @@ def search(entries, query, top=None, cli_excludes=None, include_excluded=False):
         # 证据质量门槛（随库规模相对化）：同源归并后"单概念 query"只剩 1 个证据是正常现象，
         # 不再用"≥2 证据"硬拦；改为要求证据 IDF 合计达标——大库拦"标签+当前"高频凑数（绝对值 6.0），
         # 小库（N<200）按比例缩放门槛，否则小库 IDF 天花板只有 ~2、门槛永远不可达。
-        ev_weight = sum(min(weights.get(t, 0.1), IDF_CAP) for t in maximal)
+        ev_weight = _evidence_weight(maximal, name_terms_hit, trig_terms_hit, weights)
         if ev_weight < gate and not name_hit:
             continue
-        score = ev_weight
-        if name_hit:
-            score += 3
+        score = ev_weight + _name_bonus(name_terms_hit, weights)
         if e.get("has_references"):
             score += 0.5
 
@@ -152,22 +198,72 @@ def search(entries, query, top=None, cli_excludes=None, include_excluded=False):
             e = dict(e)  # is_pinned 是展示态：打在命中副本上，不污染共享索引条目
             e["is_pinned"] = True
 
-        scored.append((score, e, sorted(maximal, key=len, reverse=True)))
+        scored.append((score, e, sorted(maximal, key=lambda t: (-len(t), t))))
+        if ev_weight > max_ev:
+            max_ev = ev_weight
 
     if not scored:
         return []
 
     scored.sort(key=lambda x: -x[0])
 
-    # 动态阈值剪枝：宁缺毋滥，不把与 Top 1 差距过大或低于绝对分数的长尾塞入结果
-    top1_score = scored[0][0]
-    cutoff = max(min_score, top1_score * 0.25)
+    # 动态阈值剪枝：宁缺毋滥，不把与 Top 1 差距过大或低于绝对分数的长尾塞入结果。
+    # 剪枝基准用最大证据权重（名称加分/置顶提权之前）：名称命中加分可把 top1 抬到
+    # 75+，若按 top1×0.25 取 cutoff 会跟着抬到 ~19，把 12.5 分的合法描述命中整批剪掉。
+    cutoff = max(min_score, max_ev * 0.25)
     pruned = [item for item in scored if item[0] >= cutoff]
 
-    return pruned[:top]
+    results = []
+    for score, e, maximal in pruned[:top]:
+        twins = _name_twins(e.get("name", ""), entries)
+        if twins:
+            e = dict(e)  # 打在命中副本上，不污染共享索引条目
+            e["similar_skills"] = twins
+        results.append((score, e, maximal))
+
+    # 并列候选检测：Top 打分高度接近（Top1 的 95% 以内有多条）说明技能库里有
+    # 多个同职技能难分伯仲——不替用户定夺，标记 ambiguous 交人工确认。
+    # 这也防"检索偏好固化"：常客技能不能靠惯性赢，同类技能必须同样参与打分。
+    if results:
+        top_score = results[0][0]
+        tied = [(s, e) for s, e, _m in results if s >= top_score * TIE_GAP_RATIO]
+        if len(tied) >= 2:
+            top_e = results[0][1]
+            if "similar_skills" not in top_e:
+                top_e = dict(top_e)
+                results[0] = (results[0][0], top_e, results[0][2])
+            top_e["ambiguous"] = True
+            top_e["tie_group"] = [
+                {"name": e["name"], "score": round(s, 1),
+                 "description": (e.get("description") or "")[:60]}
+                for s, e in tied[:4]
+            ]
+    return results
 
 
-def _single_char_search(entries, query, top, cli_excludes, include_excluded):
+def _name_twins(name, entries):
+    """同名族近似重复：A 恰为 B 的连字符前缀（如 crm-support / crm-support-snake）。
+    检索只挑中其一、调用方按名字加载时容易张冠李戴，把 twin 附在结果上供甄别。"""
+    base = (name or "").strip().lower()
+    if len(base) < 4:
+        return []
+    out = []
+    for t in entries:
+        tn = (t.get("name") or "").strip().lower()
+        if not tn or tn == base or t.get("excluded"):
+            continue
+        if tn.startswith(base + "-") or base.startswith(tn + "-"):
+            out.append({
+                "name": t.get("name"),
+                "description": (t.get("description") or "")[:80],
+            })
+            if len(out) >= 3:
+                break
+    return out
+
+
+def _single_char_search(entries, query, top, cli_excludes, include_excluded,
+                        agent_only=False):
     """单字查询兜底：terms() 丢弃单字（防噪声），但用户明确只搜一个字时按字面
     子串匹配——名字命中 > 触发词命中 > 描述命中；排除/自环/硬顶规则与主检索一致。"""
     raw = (query or "").strip().lower()
@@ -182,7 +278,9 @@ def _single_char_search(entries, query, top, cli_excludes, include_excluded):
             is_ex, _ = is_skill_excluded(ename, cli_excludes)
             if is_ex:
                 continue
-        if ename == "skill-indexer":
+        if agent_only and e.get("agent_bound") is False:
+            continue
+        if ename == "skill-gateway":
             continue
         if raw in ename.lower():
             score = 6.0

@@ -9,6 +9,6 @@ import tempfile
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "scripts"))
 
 _prod = os.environ.setdefault(
-    "SKILL_INDEXER_OUT_DIR",
+    "SKILL_GATEWAY_OUT_DIR",
     os.path.join(tempfile.mkdtemp(prefix="skix-tests-"), "output"),
 )

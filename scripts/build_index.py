@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-# build_index.py - skill-indexer CLI 入口（子命令分发）
+# build_index.py - skill-gateway CLI 入口（子命令分发）
 # 子命令: index / update / add / roots / import / list / search / explain / detail / related
 #         / stats / audit / bundle / doctor / export / route / catalog / help
 # created 2026-09-09, updated 2026-09-16 qjl: 拆分为多模块(scripts/) + 新增 doctor / export
 # updated 2026-09-16 qjl: 新增 roots(扫描根探针) / import(导入外部技能清单)
 import argparse
 import json
+import time
 import os
 import sys
 
@@ -69,7 +70,103 @@ def cmd_index(a):
         print(scanner_mod.probe_report())
 
 
+def cmd_agent_index(a):
+    """建立 Agent 级索引：把平台/Agent 绑定清单写成权威可用清单（inputs/available_skills.json）
+    并立即重建索引、dashboard 与内容索引——一步到位，网页端 skill_follow 导出可直接喂进来。"""
+    raw = importer_mod.parse_source_raw(a.source)
+    if not raw:
+        _miss(
+            "[agent-index] 没解析出技能项。支持 JSON（list 或 {skills:[...]}，如 skill_follow 的返回）/ 每行 `name: 描述`"
+        )
+    t0 = time.time()
+    list_path = os.path.join(paths.ROOT, "inputs", "available_skills.json")
+    os.makedirs(os.path.dirname(list_path), exist_ok=True)
+    doc = importer_mod.to_available_list(raw, a.agent, scanner_mod.available_list_doc())
+    index_store.atomic_write(list_path, json.dumps(doc, ensure_ascii=False, indent=2))
+    t_list = time.time()
+    entries, st = index_store.update_index()
+    t_idx = time.time()
+    try:
+        bundle_mod.write_bundle(entries, index_store.read_edges() or [])
+    except Exception:
+        pass
+    if getattr(a, "content", False):
+        try:
+            ci.update_content_index("auto")
+            t_ci = time.time()
+            ci_note = f"内容索引重建 {t_ci - t_idx:.1f}s"
+        except Exception:
+            ci_note = "内容索引重建失败（不影响元数据索引）"
+    else:
+        ci_note = "内容索引未重建（--content 可强制；检索未命中时自愈会自动增量更新）"
+    skills = [e for e in entries if e["type"] == "skill"]
+    ready = sum(1 for e in skills if e.get("visibility", "ready") == "ready")
+    blocked = sum(1 for e in skills if e.get("visibility") == "blocked")
+    off = sum(1 for e in skills if e.get("visibility") == "off-list")
+    bound = sum(1 for e in skills if e.get("agent_bound") is True)
+    cur = scanner_mod.available_list_agent()
+    print(f"[agent-index] 权威清单已写入: {list_path}（{t_list - t0:.1f}s）")
+    print(f"  当前 Agent: {cur or '（未声明，Agent 维度不生效）'}")
+    print(f"  索引重建完成（新增 {len(st.get('added', []))} / 更新 {len(st.get('updated', []))} / 移除 {len(st.get('removed', []))}，{t_idx - t_list:.1f}s）")
+    print(f"  平台可用 {ready} ｜ blocked {blocked} ｜ 平台未绑定(off-list) {off}")
+    print(f"  当前 Agent 绑定 {bound} 项")
+    print(f"  {ci_note}（总耗时 {time.time() - t0:.1f}s）")
+    print("> 口径：chat/search/pipeline 默认=平台可用；--agent 收窄当前 Agent；--all 全量审计")
+    print(f"  dashboard -> {out_path('skill-dashboard.html')}")
+
+
+# pack 交付包口径：测试基建/开发文档/运行产物/缓存不上平台
+PACK_EXCLUDE_DIRS = {"tests", "docs", "output", "__pycache__", ".pytest_cache",
+                     ".omx", ".zcode", ".git", ".github", "node_modules",
+                     "platform_mirror"}
+PACK_EXCLUDE_FILES = {"conftest.py", "available_skills.json", "platform_skills.json",
+                      "agent_list.json", "skill-gateway.zip"}
+PACK_TOP_FILES = ("SKILL.md", "README.md", "使用说明.md", "skill_gateway.config.json",
+                  "skill_profile.json", ".skillignore", ".skillexclude", ".gitignore")
+PACK_DIRS = ("scripts", "references", "templates", "inputs")
+
+
+def cmd_pack(a):
+    """生成交付包 skill-gateway.zip：先 clean 清运行时产物，再按口径排除
+    测试基建/开发文档/缓存/本机清单，输出包内清单与大小供上传前核对。"""
+    import zipfile
+
+    print("[pack] 清理运行时产物 ...")
+    cmd_clean(a)
+    zip_path = os.path.join(paths.ROOT, "skill-gateway.zip")
+    count = 0
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+        for rel in PACK_TOP_FILES:
+            fp = os.path.join(paths.ROOT, rel)
+            if os.path.isfile(fp):
+                z.write(fp, rel)
+                count += 1
+        for dname in PACK_DIRS:
+            base = os.path.join(paths.ROOT, dname)
+            if not os.path.isdir(base):
+                continue
+            for dirpath, dirnames, filenames in os.walk(base):
+                dirnames[:] = sorted(d for d in dirnames if d not in PACK_EXCLUDE_DIRS)
+                for fn in sorted(filenames):
+                    if fn in PACK_EXCLUDE_FILES or fn.endswith(".pyc"):
+                        continue
+                    fp = os.path.join(dirpath, fn)
+                    z.write(fp, os.path.relpath(fp, paths.ROOT).replace(os.sep, "/"))
+                    count += 1
+    size = os.path.getsize(zip_path)
+    print(f"[pack] 交付包: {zip_path}（{count} 个文件，{size:,} 字节）")
+    print("[pack] 包内清单:")
+    with zipfile.ZipFile(zip_path) as z:
+        for info in z.infolist():
+            print(f"  {info.file_size:8,}  {info.filename}")
+    print("> 上传平台后：技能页「重新扫描」→ 沙箱里 agent-index / index 重建索引")
+
+
 def cmd_roots(a):
+    _avail = scanner_mod.available_list_file()
+    if _avail:
+        n = len(scanner_mod.available_list_entries() or [])
+        print(f"[模式] 权威可用清单已激活: {_avail}（{n} 项）——技能索引=清单本身，磁盘扫描让位。\n")
     print(scanner_mod.probe_report())
 
 
@@ -145,6 +242,10 @@ def cmd_list(a):
     total_all = len(es)
     if a.type:
         es = [e for e in es if e["type"] == a.type]
+    if getattr(a, "visibility", "all") != "all":
+        es = [e for e in es if e.get("visibility", "ready") == a.visibility]
+    if getattr(a, "agent_only", False):
+        es = [e for e in es if e.get("agent_bound") is not False]
     if a.with_ref:
         es = [e for e in es if e["has_references"]]
     total = len(es)
@@ -158,7 +259,8 @@ def cmd_list(a):
     for e in shown:
         ref = " [ref]" if e["has_references"] else ""
         ex_tag = " [已排除]" if e.get("excluded") else ""
-        print(f"- ({e['type']}) {e['name']}{ref}{ex_tag}")
+        cp_tag = "".join(f" [{e[k]}]" for k in ("category", "platform") if e.get(k))
+        print(f"- ({e['type']}) {e['name']}{ref}{ex_tag}{cp_tag}")
         print(f"    描述: {e['description']}")
         if e.get("triggers"):
             print(f"    触发: {'、'.join(e['triggers'])}")
@@ -176,7 +278,9 @@ def cmd_list(a):
 def cmd_search(a):
     cli_excludes = a.exclude
     entries = index_store.load_index()
-    hits = retrieval.search(entries, a.query, a.top, cli_excludes=cli_excludes)
+    hits = retrieval.search(entries, a.query, a.top, cli_excludes=cli_excludes,
+                            include_off_list=getattr(a, "all_items", False),
+                            agent_only=getattr(a, "agent_only", False))
     if not hits:
         # 触发按需靶向自愈重试
         refreshed_entries, edges, st, has_changes = index_store.auto_update_on_miss(
@@ -187,10 +291,12 @@ def cmd_search(a):
             upd_n = len(st.get("updated", []))
             rem_n = len(st.get("removed", []))
             print(
-                f"[skill-indexer 动态自愈] 首次未命中，检测到技能库有变更（新增 {add_n} / 更新 {upd_n} / 移除 {rem_n}），已自动完成增量更新并刷新知识图谱！正在重新检索...\n"
+                f"[skill-gateway 动态自愈] 首次未命中，技能库有变更（新增 {add_n} / 更新 {upd_n} / 移除 {rem_n}），已增量更新并刷新图谱，重新检索。\n"
             )
             hits = retrieval.search(
-                refreshed_entries, a.query, a.top, cli_excludes=cli_excludes
+                refreshed_entries, a.query, a.top, cli_excludes=cli_excludes,
+                include_off_list=getattr(a, "all_items", False),
+                agent_only=getattr(a, "agent_only", False),
             )
             entries = refreshed_entries
         else:
@@ -210,18 +316,34 @@ def cmd_search(a):
         print(f"📌 [用户重要指令已生效: 共 {len(directives)} 条全局规范]")
     print(f"# 检索「{a.query}」Top {len(hits)}\n")
 
+    if hits[0][1].get("ambiguous"):
+        tg = hits[0][1]["tie_group"]
+        print(
+            "⚠ **并列候选——打分高度接近，需人工确认用哪个**："
+            + " / ".join(f"**{t['name']}**({t['score']})" for t in tg)
+            + "\n"
+        )
+
     edges = index_store.read_edges() or []
     by_id = retrieval.build_id_map(entries)
     all_related = []
 
     for score, e, overlap in hits:
         pinned_tag = " [★常用置顶]" if e.get("is_pinned") else ""
+        cp_tag = "".join(f" [{e[k]}]" for k in ("category", "platform") if e.get(k))
         print(
-            f"{score:6.1f}  ({e['type']}) {e['name']}{pinned_tag}: {e['description'][:100]}"
+            f"{score:6.1f}  ({e['type']}) {e['name']}{pinned_tag}{cp_tag}: {e['description'][:100]}"
         )
         if e.get("triggers"):
             print(f"        触发: {'、'.join(e['triggers'])}")
         print(f"        命中: {', '.join(overlap[:10])}")
+        sim = e.get("similar_skills")
+        if sim:
+            print(
+                "        近似同名: "
+                + "；".join(f"{s['name']}({s['description'][:40]})" for s in sim)
+                + " （采纳前先 detail 确认变体）"
+            )
 
         # 计算图谱关联联动（优先静态边，若无则基于领域与生命周期动态推导）
         eid = retrieval.entry_id(e)
@@ -260,25 +382,22 @@ def cmd_search(a):
         "pipeline",
     )
     if any(k in a.query.lower() for k in task_keywords):
-        print(f"\n🔗 [图谱多技能串联编排建议]")
-        print(f"  当前需求涉及复合工程/研发交付任务，单技能孤立执行易导致上下文断层。")
-        print(f"  建议直接运行 pipeline 按图谱拓扑生成端到端流水线：")
-        print(f'  👉 python scripts/build_index.py pipeline "{a.query}"')
+        print(f"\n[skill-gateway] 复合工程任务建议用 pipeline 生成多技能流水线:")
+        print(f'  python scripts/build_index.py pipeline "{a.query}"')
 
     best_hit = hits[0][1]["name"] if hits else "无"
     rel_names_str = "、".join(all_related[:3])
     if rel_names_str:
-        print(
-            f"\n[skill-indexer] 智能直达: 命中 [{best_hit}] (联动: {rel_names_str}) | 消除多跳选型"
-        )
+        print(f"\n[skill-gateway] 检索: 命中 [{best_hit}] (联动: {rel_names_str})")
     else:
-        print(f"\n[skill-indexer] 智能直达: 命中 [{best_hit}] | 消除中间转接")
+        print(f"\n[skill-gateway] 检索: 命中 [{best_hit}]")
+    print("> 留痕须原样附在答复末尾；答复简短直接，不复述检索过程。")
 
     # 主动决策增量更新与自省晋升。检索结果不算"使用"（不传 hits），
     # 只有用户显式 detail / 采纳才计频晋升。
     hook_res = proactive.proactive_post_hook("search", {"query": a.query})
     if hook_res.get("updated") and hook_res.get("msg"):
-        print(f"\n[skill-indexer] {hook_res['msg']}")
+        print(f"\n[skill-gateway] {hook_res['msg']}")
 
 
 def _find(es, name):
@@ -301,13 +420,18 @@ def cmd_detail(a):
         with open(sk, encoding="utf-8", errors="replace") as f:
             print(f.read())
     else:
+        if e.get("path"):
+            print(f"⚠ 本地文件缺失：{e['path']}/SKILL.md 不存在（技能可能已被移动/删除，建议重建索引）。")
+        else:
+            print("⚠ 平台云技能：无本地 SKILL.md（清单未提供 path）。"
+                  "以下仅为索引描述摘要；全文请在平台技能库查看，或让平台落盘后重建索引。")
         print(e["description"])
     # detail = 用户显式取用某技能全文，是可信的"真实使用"信号，计入频次晋升
     hook_res = proactive.proactive_post_hook(
         "detail", {"query": a.name, "skills": [e["name"]]}
     )
     if hook_res.get("updated") and hook_res.get("msg"):
-        print(f"\n[skill-indexer] {hook_res['msg']}")
+        print(f"\n[skill-gateway] {hook_res['msg']}")
     if hook_res.get("promoted"):
         for p_skill in hook_res["promoted"]:
             print(
@@ -402,7 +526,7 @@ def cmd_catalog(a):
     lines = [
         "# 技能与 MCP 总览",
         "",
-        f"> 由 skill-indexer 自动生成，共 {len(es)} 项。",
+        f"> 由 skill-gateway 自动生成，共 {len(es)} 项。",
         "",
     ]
     for t in ("skill", "mcp"):
@@ -441,7 +565,7 @@ def cmd_dashboard(a):
     # 1. 显式 --download：同步一份到系统下载目录（便于浏览器直接查看）
     dl_copied = None
     if a.download:
-        dl_dir = os.environ.get("SKILL_INDEXER_DOWNLOAD_DIR") or os.path.expanduser(
+        dl_dir = os.environ.get("SKILL_GATEWAY_DOWNLOAD_DIR") or os.path.expanduser(
             "~/Downloads"
         )
         if os.path.isdir(dl_dir):
@@ -535,7 +659,9 @@ def cmd_chat(a):
     edges = index_store.read_edges() or []
 
     # 1. 检索候选技能
-    hits = retrieval.search(entries, query, top=top_n, cli_excludes=cli_excludes)
+    hits = retrieval.search(entries, query, top=top_n, cli_excludes=cli_excludes,
+                            include_off_list=getattr(a, "all_items", False),
+                            agent_only=getattr(a, "agent_only", False))
 
     if not hits:
         # 从 content-index 尝试反查所属技能
@@ -565,12 +691,14 @@ def cmd_chat(a):
             upd_n = len(st.get("updated", []))
             rem_n = len(st.get("removed", []))
             print(
-                f"[skill-indexer 动态自愈] 首次未命中，检测到技能库有变更（新增 {add_n} / 更新 {upd_n} / 移除 {rem_n}），已自动完成增量更新并刷新知识图谱！正在重新问答...\n"
+                f"[skill-gateway 动态自愈] 首次未命中，技能库有变更（新增 {add_n} / 更新 {upd_n} / 移除 {rem_n}），已增量更新并刷新图谱，重新问答。\n"
             )
             entries = refreshed_entries
             edges = refreshed_edges
             hits = retrieval.search(
-                entries, query, top=top_n, cli_excludes=cli_excludes
+                entries, query, top=top_n, cli_excludes=cli_excludes,
+                include_off_list=getattr(a, "all_items", False),
+                agent_only=getattr(a, "agent_only", False),
             )
 
     if not hits:
@@ -597,6 +725,14 @@ def cmd_chat(a):
 
     print(f"## 推荐技能（Top {len(hits)}）\n")
 
+    if hits[0][1].get("ambiguous"):
+        tg = hits[0][1]["tie_group"]
+        print(
+            "⚠ **并列候选——打分高度接近，需人工确认用哪个**："
+            + " / ".join(f"**{t['name']}**({t['score']})" for t in tg)
+            + "\n"
+        )
+
     related_names = set()
     for rank, (score, e, overlap) in enumerate(hits, 1):
         eid = retrieval.entry_id(e)
@@ -610,9 +746,17 @@ def cmd_chat(a):
         desc_short = e.get("description", "")[:120]
         trig = "、".join((e.get("triggers") or [])[:5])
         pinned_tag = " ★ [常用置顶]" if e.get("is_pinned") else ""
-        print(f"{rank}. **{e['name']}**{pinned_tag} [{score:.1f}] — {desc_short}")
+        cp_tag = "".join(f" [{e[k]}]" for k in ("category", "platform") if e.get(k))
+        print(f"{rank}. **{e['name']}**{pinned_tag}{cp_tag} [{score:.1f}] — {desc_short}")
         if trig:
             print(f"   触发: {trig}")
+        sim = e.get("similar_skills")
+        if sim:
+            print(
+                "   近似同名: "
+                + "；".join(f"**{s['name']}**({s['description'][:40]})" for s in sim)
+                + " （采纳前先 detail 确认变体）"
+            )
         if neighbors:
             neighbors.sort(key=lambda x: -x["weight"])
             nb_str = "、".join(
@@ -660,12 +804,15 @@ def cmd_chat(a):
         if rel_names_str:
             extra += f" (联动: {rel_names_str})"
         print(f"\n{fp}{extra}")
+        print(
+            "\n> 留痕须原样附在答复末尾；答复简短直接，不复述检索过程。"
+        )
 
     # 主动决策增量更新与自省晋升。问答命中不算"使用"（不传 hits），
     # 只有用户显式 detail / 采纳才计频晋升。
     hook_res = proactive.proactive_post_hook("chat", {"query": query})
     if hook_res.get("updated") and hook_res.get("msg"):
-        print(f"\n[skill-indexer] {hook_res['msg']}")
+        print(f"\n[skill-gateway] {hook_res['msg']}")
 
 
 def cmd_content_index(a):
@@ -735,7 +882,8 @@ def cmd_content_find(a):
 
 def cmd_pipeline(a):
     """技能图谱串联编排：按任务检索 + 依图谱拓扑自动生成多技能协同流水线（无硬编码模板）。"""
-    pipe = pipeline_mod.build_pipeline(a.query)
+    pipe = pipeline_mod.build_pipeline(a.query, include_off_list=getattr(a, "all_items", False),
+                                       agent_only=getattr(a, "agent_only", False))
     if a.json:
         clean_pipe = {
             "task": pipe["task"],
@@ -753,6 +901,11 @@ def cmd_pipeline(a):
                 for s in pipe["stages"]
             ],
             "skills": sorted(pipe.get("skills", [])),
+            "skills_meta": [
+                {"name": sk["name"],
+                 **{k: sk[k] for k in ("category", "platform", "visibility", "agent_bound", "agents") if sk.get(k)}}
+                for s in pipe["stages"] for sk in s["skills"]
+            ],
         }
         print(json.dumps(clean_pipe, ensure_ascii=False, indent=2))
     else:
@@ -765,7 +918,7 @@ def cmd_pipeline(a):
     hook_res = proactive.proactive_post_hook("pipeline", {"query": a.query})
     if hook_res.get("updated") and hook_res.get("msg"):
         # --json 是机器可读契约：提示信息走 stderr，不污染 stdout
-        print(f"\n[skill-indexer] {hook_res['msg']}", file=sys.stderr)
+        print(f"\n[skill-gateway] {hook_res['msg']}", file=sys.stderr)
 
 
 def cmd_profile(a):
@@ -1028,26 +1181,47 @@ COMMANDS = [
         "args": [(("source",), {"help": "文件路径 / - 读 stdin / 直接文本"})],
     },
     {
+        "name": "agent-index",
+        "usage": "agent-index <文件|-> [--agent <智能体名>]",
+        "help": "建立 Agent 级索引：把平台绑定清单（如 skill_follow 导出）写成权威可用清单并重建索引",
+        "handler": "cmd_agent_index",
+        "args": [
+            (("source",), {"help": "清单来源：文件路径 / - 读 stdin / 直接文本"}),
+            (("--agent",), {"help": "当前智能体名（写入 current_agent，并作为每项默认 agents）"}),
+            (("--content",), {"action": "store_true",
+                               "help": "同时重建内容索引（默认跳过——首次全量最耗时；未命中自愈会自动补）"}),
+        ],
+    },
+    {
         "name": "list",
-        "usage": "list [--type skill|mcp] [--with-ref] [--limit N] [--excluded]",
+        "usage": "list [--type skill|mcp|connector|agent] [--visibility ready|off-list|blocked|all] [--with-ref] [--limit N] [--excluded]",
         "help": "列出全部技能与 MCP + 笼统使用建议；--excluded 仅列出已排除技能",
         "handler": "cmd_list",
         "args": [
-            (("--type",), {"choices": ["skill", "mcp"]}),
+            (("--type",), {"choices": ["skill", "mcp", "connector", "agent"]}),
+            (("--visibility",), {"choices": ["ready", "off-list", "blocked", "all"],
+                                  "default": "ready",
+                                  "help": "按可见性过滤：ready=平台可用(默认)；off-list=平台未绑定；blocked=已屏蔽；all=全部"}),
             (("--with-ref",), {"action": "store_true", "help": "仅含参考资料的技能"}),
             (("--limit",), {"type": int, "default": 0, "help": "只显示前 N 条"}),
+            (("--agent",), {"action": "store_true", "dest": "agent_only",
+                             "help": "只看当前 Agent 绑定的技能（agent_bound=False 的不显示）"}),
             (("--excluded",), {"action": "store_true", "help": "仅查看被排除的技能清单及原因"}),
         ],
     },
     {
         "name": "search",
-        "usage": "search <关键词> [--top N] [--exclude <规则>]",
+        "usage": "search <关键词> [--top N] [--exclude <规则>] [--all]",
         "help": "按关键词全量打分检索（IDF加权+硬顶20条配额+低分剪枝+未命中自愈更新）",
         "handler": "cmd_search",
         "args": [
             (("query",), {}),
             (("--top",), {"type": int, "default": 8}),
             (("--exclude",), {"help": "临时排除特定技能（支持逗号分隔或通配符，如 test-*,mock-*）"}),
+            (("--all",), {"action": "store_true", "dest": "all_items",
+                           "help": "全量审计视图：放行平台未绑定(off-list)技能，不得作为交付依据"}),
+            (("--agent",), {"action": "store_true", "dest": "agent_only",
+                             "help": "Agent 绑定口径：只出当前 Agent 绑定的技能（非默认，默认平台口径）"}),
         ],
     },
     {
@@ -1153,13 +1327,17 @@ COMMANDS = [
     },
     {
         "name": "chat",
-        "usage": "chat <query> [--top N] [--exclude <规则>]",
+        "usage": "chat <query> [--top N] [--exclude <规则>] [--all]",
         "help": "技能图谱问答：输入自然语言问题，返回推荐技能 + 关联 + 相关内容",
         "handler": "cmd_chat",
         "args": [
             (("query",), {"help": "自然语言问题"}),
             (("--top",), {"type": int, "default": 5, "help": "推荐技能数量"}),
             (("--exclude",), {"help": "临时排除特定技能（支持逗号分隔或通配符）"}),
+            (("--all",), {"action": "store_true", "dest": "all_items",
+                           "help": "全量审计视图：放行平台未绑定(off-list)技能"}),
+            (("--agent",), {"action": "store_true", "dest": "agent_only",
+                             "help": "Agent 绑定口径：只出当前 Agent 绑定的技能（非默认，默认平台口径）"}),
         ],
     },
     {
@@ -1193,13 +1371,17 @@ COMMANDS = [
     },
     {
         "name": "pipeline",
-        "usage": "pipeline <任务> [--json]   （别名: chain）",
+        "usage": "pipeline <任务> [--json] [--all]   （别名: chain）",
         "help": "技能图谱串联编排：按任务检索 + 依图谱拓扑（depends_on 分层/相似聚类）动态生成协同流水线",
         "handler": "cmd_pipeline",
         "aliases": ["chain"],
         "args": [
             (("query",), {"help": "任务描述"}),
             (("--json",), {"action": "store_true", "help": "输出 JSON 格式"}),
+            (("--all",), {"action": "store_true", "dest": "all_items",
+                           "help": "全量审计视图：编排种子放行平台未绑定(off-list)技能"}),
+            (("--agent",), {"action": "store_true", "dest": "agent_only",
+                             "help": "Agent 绑定口径：编排种子只取当前 Agent 绑定的技能（非默认，默认平台口径）"}),
         ],
     },
     {
@@ -1234,6 +1416,13 @@ COMMANDS = [
         "args": [],
     },
     {
+        "name": "pack",
+        "usage": "pack",
+        "help": "生成交付包 skill-gateway.zip（自动 clean；排除测试/缓存/运行产物与本机清单）",
+        "handler": "cmd_pack",
+        "args": [],
+    },
+    {
         "name": "clean",
         "usage": "clean",
         "help": "清理全部运行时生成的索引与产物文件，恢复为纯净源数据状态（打包分发/外部测试前用）",
@@ -1251,7 +1440,7 @@ COMMANDS = [
 
 
 def cmd_help(a):
-    print("# skill-indexer 命令一览\n")
+    print("# skill-gateway 命令一览\n")
     for spec in COMMANDS:
         print(f"- {spec.get('usage') or spec['name']}: {spec['help']}")
     print("\n# 退出码约定：0=成功；2=预期内的未命中/未找到（可换词重试）；1=异常错误")
@@ -1263,7 +1452,7 @@ def cmd_help(a):
 
 def _build_parser():
     p = argparse.ArgumentParser(
-        description="skill-indexer: 索引并检索 agent 的全部技能与 MCP"
+        description="skill-gateway: 索引并检索 agent 的全部技能与 MCP"
     )
     sub = p.add_subparsers(dest="cmd")
     for spec in COMMANDS:

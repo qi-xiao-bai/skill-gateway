@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# index_store.py - 索引读写 + 全量/增量构建 + L0/L1 文本（skill-indexer）
+# index_store.py - 索引读写 + 全量/增量构建 + L0/L1 文本（skill-gateway）
 # created 2026-09-16 qjl
 # updated 2026-09-16 qjl: 索引里固化 ID / 关系边(edges) / 覆盖口径(meta)，供 related/stats/export 复用
 import json
@@ -93,6 +93,9 @@ def coverage(entries):
         "connector": n_conn,
         "agent": n_agent,
         "by_source": dict(Counter(e["source"] for e in entries).most_common()),
+        "by_visibility": dict(Counter(e.get("visibility", "ready") for e in entries)),
+        "agent_bound": sum(1 for e in entries if e.get("agent_bound") is True),
+        "agent_unbound": sum(1 for e in entries if e.get("agent_bound") is False),
         "with_references": sum(1 for e in entries if e.get("has_references")),
         # 全文覆盖：detail 能不能真的取出全文（计数 + 名单分开给，别把两者混成一个键）
         "full_text": n_skill - len(stub) - len(no_file),
@@ -145,18 +148,26 @@ def desc_clipped(e):
     return len(_one_line(e.get("description"))) > DENSE_QUOTA_DESC
 
 
+def _retrievable(entries):
+    """进入模型可读索引（L0/L1）的条目 = 未被排除的（excluded：.skillexclude 规则 /
+    清单 blocked / 平台未绑定 off-list）。检索口径=平台可用，L1 不能泄漏口径外条目，
+    否则模型会把不可用技能当候选去选型。"""
+    return [e for e in entries if not e.get("excluded")]
+
+
 def l0_text(entries):
-    return "\n".join(e["name"] for e in entries) + "\n"
+    return "\n".join(e["name"] for e in _retrievable(entries)) + "\n"
 
 
 def l1_text(entries):
-    """L1 = 高密度索引本体（一条一行，不含头块）。"""
-    return "\n".join(dense_line(e) for e in entries) + "\n"
+    """L1 = 高密度索引本体（一条一行，不含头块）。只收可用条目。"""
+    return "\n".join(dense_line(e) for e in _retrievable(entries)) + "\n"
 
 
 def dense_text(entries):
     """模型面向的完整索引：头块（声明格式/计数/图例/配额/硬规矩）+ L1 本体。
     头块让模型不必猜格式；「不抄全文」这条硬规矩直接写在文件里，防止后续被膨胀。"""
+    entries = _retrievable(entries)
     n_s = sum(1 for e in entries if e["type"] == "skill")
     n_c = sum(1 for e in entries if e.get("is_connector") or e["type"] == "connector")
     n_a = sum(1 for e in entries if e.get("is_agent") or e["type"] == "agent")
@@ -182,6 +193,10 @@ def write_index(entries):
     """写两份索引。机器那份除 entries 外还带：稳定 ID、排除标记(excluded)、关系边(edges)、覆盖口径(meta)。"""
     for e in entries:
         e["id"] = retrieval.entry_id(e)
+        if e.get("visibility") in ("blocked", "off-list"):
+            # 口径打标优先：清单 blocked / off-list 的排除不按 .skillexclude 重算，
+            # 保留 build 时写入的 exclude_reason
+            continue
         is_ex, reason = is_skill_excluded(e["name"])
         e["excluded"] = is_ex
         if is_ex:
@@ -291,9 +306,15 @@ def write_edges(edges):
 
 
 def build_index(broad="auto"):
-    """全量重建（首次使用 / 想彻底刷新时用）。"""
+    """全量重建（首次使用 / 想彻底刷新时用）。
+    权威清单存在时与 update 同口径走三段合并（清单 ready/blocked + 磁盘 off-list），
+    否则单跑 index 会把 off-list 层覆盖丢掉。"""
     import scanner
 
+    avail = scanner.available_list_entries()
+    if avail is not None:
+        entries, _st = _update_from_available_list(read_index(), avail)
+        return entries
     entries = scanner.scan_all(broad)
     write_index(entries)
     return entries
@@ -320,7 +341,7 @@ def auto_bridge(mode="list"):
       输出诚实标注"仅定位用"；audit/detail/正文检索这些 L2 能力需要全文，不在此档。
     - mode="full"：**全量构建**——清单缺任何一项完整 SKILL.md 就中止、不写索引（rc=2），
       并把"怎么取全文"讲清楚；绝不拿元数据冒充全量构建。
-    SKILL_INDEXER_NO_AUTO=1 可关闭；桥接子进程里有 SKILL_INDEXER_BRIDGE_RUN=1 防递归。
+    SKILL_GATEWAY_NO_AUTO=1 可关闭；桥接子进程里有 SKILL_GATEWAY_BRIDGE_RUN=1 防递归。
     返回 (entries|None, bridge_res|None)；full 被中止时 res 带 partial=True + error。"""
     try:
         import platform_bridge as pb  # 延迟导入：platform_bridge 反向依赖本模块
@@ -350,11 +371,11 @@ def auto_bridge(mode="list"):
     # 只扫镜像重扫；用完把环境变量还原，避免污染同进程内的后续调用
     prev = {
         k: os.environ.get(k)
-        for k in ("SKILL_INDEXER_SKILL_DIRS", "SKILL_INDEXER_ONLY_DIRS")
+        for k in ("SKILL_GATEWAY_SKILL_DIRS", "SKILL_GATEWAY_ONLY_DIRS")
     }
     try:
-        os.environ["SKILL_INDEXER_SKILL_DIRS"] = res["mirror"]
-        os.environ["SKILL_INDEXER_ONLY_DIRS"] = "1"
+        os.environ["SKILL_GATEWAY_SKILL_DIRS"] = res["mirror"]
+        os.environ["SKILL_GATEWAY_ONLY_DIRS"] = "1"
         return build_index(False), res
     finally:
         for k, v in prev.items():
@@ -370,8 +391,8 @@ def heal_if_self_only(entries, mode="list"):
     （被中止时把 res（partial=True + error）透传，让 `index --full` 以 rc=2 报告）。"""
     if not is_self_only(entries):
         return entries, None
-    if os.environ.get("SKILL_INDEXER_BRIDGE_RUN") or os.environ.get(
-        "SKILL_INDEXER_NO_AUTO"
+    if os.environ.get("SKILL_GATEWAY_BRIDGE_RUN") or os.environ.get(
+        "SKILL_GATEWAY_NO_AUTO"
     ):
         return entries, None
     got, res = auto_bridge(mode=mode)
@@ -409,7 +430,7 @@ def index_footprint(hit_count=None):
         parts.append(f"节省 {100 - pct:.1f}% token")
     elif l1:
         parts.append(f"索引 {l1:,} 字符")
-    return "[skill-indexer] " + " | ".join(parts) if parts else ""
+    return "[skill-gateway] " + " | ".join(parts) if parts else ""
 
 
 def load_index():
@@ -436,6 +457,13 @@ def update_index(broad="auto", query=None, targeted=False):
     import scanner
 
     old = read_index()
+
+    # 权威可用清单模式：inputs/available_skills.json 存在 → 索引=清单本身，
+    # 不做磁盘扫描（MCP/连接器仍走配置发现）
+    avail = scanner.available_list_entries()
+    if avail is not None:
+        return _update_from_available_list(old, avail)
+
     if old is None:
         entries = scanner.scan_all(broad)
         write_index(entries)
@@ -510,6 +538,8 @@ def update_index(broad="auto", query=None, targeted=False):
 
         # 3. 编译解析该技能
         e = scanner.make_skill_entry(skill_dir, sk, root, mt)
+        if e is None:
+            continue
         if e["name"] in seen_names:
             continue
         seen_names.add(e["name"])
@@ -537,6 +567,131 @@ def update_index(broad="auto", query=None, targeted=False):
         "kept": len(kept),
         "targeted": should_target,
         "deferred": deferred,
+    }
+
+
+def _update_from_available_list(old, avail):
+    """权威清单模式：单索引三段合并——
+    ① 清单 ready（平台可用，默认检索口径）② 清单 blocked（excluded，dashboard 已排除可见）
+    ③ 磁盘发现但不在清单里 → off-list（excluded，仅 --all 全量视图可见，不得作为交付依据）。
+    同名条目清单优先；MCP/连接器仍走配置发现并参与跨类型同名去重。"""
+    import scanner
+    old_list = {e["name"].lower(): e for e in (old or [])
+                if e.get("type") == "skill"
+                and e.get("source") in ("available-list", "profile-authoritative")}
+    added, updated, kept, out = [], [], [], []
+    list_names = set()
+    for e in avail:
+        nm = e["name"]
+        list_names.add(nm.lower())
+        o = old_list.get(nm.lower())
+        sig = (e.get("description"), tuple(e.get("triggers") or []), e.get("path"),
+               e.get("category"), e.get("platform"), e.get("excluded", False),
+               tuple(e.get("agents") or []), e.get("agent_bound"))
+        if o is None:
+            added.append(nm)
+        elif (o.get("description"), tuple(o.get("triggers") or []), o.get("path"),
+              o.get("category"), o.get("platform"), o.get("excluded", False),
+              tuple(o.get("agents") or []), o.get("agent_bound")) != sig:
+            updated.append(nm)
+        else:
+            kept.append(nm)
+            e = o  # 未变 → 复用旧记录，保留原 mtime 与内容索引指纹
+        out.append(e)
+    removed = {n for n in old_list if n not in list_names}
+    ready_bases = {e["name"].lower() for e in avail
+                   if e.get("visibility") == "ready"}
+    bound_by_name = {e["name"].lower(): e for e in avail}
+
+    # ③ 清单外的磁盘发现：入索引但标记 off-list（清单同名优先，不入默认检索口径）。
+    # mtime 增量：未变的直接复用旧条目不重读文件——自愈/重复 update 时这段是隐藏大头。
+    old_off = {e["name"].lower() for e in (old or []) if e.get("visibility") == "off-list"}
+    old_off_by_path = {e.get("path"): e for e in (old or [])
+                       if e.get("visibility") == "off-list" and e.get("path")}
+    new_off, seen_off, converted = [], set(), set()
+    for root, sk in scanner.enumerate_skill_md("auto"):
+        skill_dir = os.path.dirname(sk)
+        try:
+            mt = int(os.path.getmtime(sk))
+        except OSError:
+            mt = 0
+        o = old_off_by_path.get(skill_dir)
+        if o is not None and o.get("mtime") == mt:
+            e = o  # 未变 → 复用旧条目
+        else:
+            e = scanner.make_skill_entry(skill_dir, sk, root, mt)
+            if e is None:
+                continue
+            if e["name"].lower() in old_off:
+                updated.append(e["name"])
+        low = e["name"].lower()
+        if low in list_names or low in seen_off:
+            continue  # 清单同名优先；同名磁盘技能只收一次
+        # 绑定技能的磁盘变体保持可用（如清单绑定 crm-support、磁盘上是 crm-support-snake）：
+        # 名字前缀只是**线索**（双方 ≥4 字符），业务证据才是门槛——描述/触发词与绑定技能
+        # 真实重叠（共享词 ≥2 且 Jaccard ≥ 图谱 overlap 边阈值）。只蹭名字没业务的照旧 off-list。
+        base = None
+        if ready_bases:
+            cand = [b for b in ready_bases
+                    if (low.startswith(b + "-") or b.startswith(low + "-"))
+                    and min(len(low), len(b)) >= 4]
+            ets = retrieval.terms((e.get("description") or "") + " "
+                                  + " ".join(e.get("triggers") or []))
+            best = None
+            for b in cand:
+                be = bound_by_name.get(b)
+                if not be:
+                    continue
+                bts = retrieval.terms((be.get("description") or "") + " "
+                                      + " ".join(be.get("triggers") or []))
+                shared = ets & bts
+                union = ets | bts
+                if len(shared) >= 2 and union and len(shared) / len(union) >= retrieval.EDGE_MIN_JACCARD:
+                    j = len(shared) / len(union)
+                    if best is None or j > best[1]:
+                        best = (b, j)
+            base = best[0] if best else None
+        if base:
+            e = dict(e)
+            e["visibility"] = "ready"
+            e["variant_of"] = base
+            e.pop("excluded", None)
+            e.pop("exclude_reason", None)
+            if low in old_off:
+                updated.append(e["name"])
+            else:
+                added.append(e["name"])
+            converted.add(low)
+            seen_off.add(low)
+            out.append(e)
+            continue
+        seen_off.add(low)
+        e = dict(e)
+        e["visibility"] = "off-list"
+        e["excluded"] = True
+        e["exclude_reason"] = "平台未绑定（不在权威可用清单，仅 --all 全量视图可见）"
+        if low not in old_off:
+            added.append(low)
+        new_off.append(low)
+        out.append(e)
+    removed |= (old_off - set(new_off)) - converted  # 转 ready 的变体不算移除
+
+    mcp = scanner.scan_mcp()
+    old_mcp = {e["name"] for e in (old or []) if e.get("type") == "mcp"}
+    new_mcp = {e["name"] for e in mcp}
+    added += sorted(new_mcp - old_mcp)
+    removed |= old_mcp - new_mcp
+    out = scanner.dedupe_entries(out + mcp)
+    out.sort(key=lambda e: (e["type"], e["name"].lower()))
+    write_index(out)
+    return out, {
+        "first": old is None,
+        "added": added,
+        "updated": updated,
+        "removed": sorted(removed),
+        "kept": len(kept),
+        "targeted": False,
+        "deferred": [],
     }
 
 
@@ -624,6 +779,8 @@ def add_skill(target):
 
     d, sk, source = found
     e = scanner.make_skill_entry(d, sk, source)
+    if e is None:
+        return None, "目录名无效（纯符号装饰的垃圾目录），拒绝入索引"
     if e["name"].lower() in have:
         return e["name"], "已在索引中（跳过）"
     entries.append(e)

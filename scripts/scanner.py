@@ -84,28 +84,184 @@ def enumerate_skill_md(broad="auto"):
     """按扫描顺序 yield (source_root, skill_md_path)。只做目录遍历，不读文件内容。
     broad=False → 只用约定/配置/自身相对根；
     broad=True  → 追加广域发现（skills / *-skills 目录）；
-    broad='auto'→ 约定根里除了本技能自己之外一个技能都没有时，自动改用广域发现兜底。
-    （注意判定要排除"自身"：技能自己总是被解压落盘，光靠"是否 0 项"永远触发不了兜底。）
+    broad='auto'→ 约定根 + 广域发现取并集（同名去重，约定根优先）。
+    auto 永远并入广域：约定根"非空"不代表"完整"——2026-09-30 网页端实测，沙箱约定
+    目录恰好有 101 个技能，/app/data/skills 里的 349 个全被"非空即不兜底"屏蔽。
+    先产出约定根、后产出广域根，配合同名去重即保证优先级不变，并集只增不减。
+    （only_dirs 开启时仍严格只用显式根，尊重用户的隔离意图。）
     自身相对的祖先目录可能很大，用更浅的 max_depth=3 兜住成本。"""
     base = []
     for r, tag in candidate_roots():
         base += list(_iter_from([r], max_depth=3 if tag == "self" else 5))
-    mine = os.path.normcase(os.path.realpath(ROOT))
-    others = [1 for _root, sk in base
-              if os.path.normcase(os.path.realpath(os.path.dirname(sk))) != mine]
     for item in base:
         yield item
-    if broad is True or (broad == "auto" and not others and not only_dirs()):
+    if broad is True or (broad == "auto" and not only_dirs()):
         for item in _iter_from(broad_discover()):
             yield item
+
+
+def _sane_skill_name(nm):
+    """技能名有效性：至少含一个文字字符，且不以 2 个以上符号装饰开头。
+    拦截把章节标题/分隔线当技能名的垃圾目录（`------`、`====固定参数====`）。"""
+    nm = (nm or "").strip()
+    if not nm or not re.search(r"\w", nm):
+        return False
+    return not re.match(r"^[\W_]{2,}", nm)
+
+
+# 权威可用清单的候选文件名（相对技能根的 inputs/ 下；后者为兼容名）
+AVAILABLE_LIST_FILES = ("available_skills.json", "platform_skills.json")
+_BLOCKED_STATUS = {"blocked", "disabled", "unavailable", "off", "停用", "不可用", "已停用"}
+
+
+def available_list_file():
+    """权威可用清单路径：inputs/available_skills.json（兼容 platform_skills.json）。
+    存在即视为"本智能体能用什么技能"的完整定义，常规磁盘扫描全部让位。"""
+    for nm in AVAILABLE_LIST_FILES:
+        p = os.path.join(ROOT, "inputs", nm)
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def available_list_doc():
+    """读取权威可用清单原始 JSON；不存在/解析失败返回 None。"""
+    p = available_list_file()
+    if not p:
+        return None
+    try:
+        with open(p, encoding="utf-8", errors="replace") as f:
+            data = json.load(f)
+    except Exception:
+        return None
+    return data if isinstance(data, (dict, list)) else None
+
+
+def available_list_agent():
+    """当前 Agent（智能体）名。解析顺序：环境变量 SKILL_GATEWAY_AGENT > 清单顶层 current_agent
+    > skill_profile.json 的 current_agent。返回 None 表示未声明——Agent 维度不生效
+    （所有条目 agent_bound=True，--agent 无收窄效果）。"""
+    v = (os.environ.get("SKILL_GATEWAY_AGENT") or "").strip()
+    if v:
+        return v
+    data = available_list_doc()
+    if isinstance(data, dict):
+        v = str(data.get("current_agent") or "").strip()
+        if v:
+            return v
+    try:
+        import paths
+        v = str(paths.load_skill_profile().get("current_agent") or "").strip()
+        if v:
+            return v
+    except Exception:
+        pass
+    return None
+
+
+def available_list_entries():
+    """解析权威可用清单为索引记录；清单不存在/解析失败返回 None（回退常规扫描）。
+    清单格式：JSON 数组或 {"skills": [...], "current_agent": "<名>"}，每项
+    {name, description, triggers, path, status, category, platform, agents}。
+    agents 数组声明哪些 Agent（智能体）绑定了该技能：
+    - 清单完全没写 agents 字段 → Agent 维度未启用，agent_bound 全为 True（--agent 不收窄）
+    - 有 agents 字段时：当前 Agent 在数组内 → agent_bound=True；否则 False（--agent 口径不出现）
+    status 为 blocked/disabled 等的条目仍入索引（dashboard 已排除页可见）但标记 excluded，
+    检索与编排不出现。索引默认口径=平台可见；Agent 绑定是更细一层，非默认。"""
+    p = available_list_file()
+    if not p:
+        # 兼容入口：网页端补丁把绑定名写在 skill_profile.json.authoritative_skills
+        # （仅名字数组）。没有完整清单文件时拿它当清单来源（全部 ready、无 agents 信息，
+        # 磁盘变体照走业务证据门槛）；要 agents/category/platform 用 agent-index 生成完整清单。
+        try:
+            import paths
+            auth = paths.load_skill_profile().get("authoritative_skills")
+        except Exception:
+            auth = None
+        if isinstance(auth, list) and auth:
+            items = [it for it in ({"name": a} for a in auth
+                                   if isinstance(a, str) and a.strip()) if it]
+            return _entries_from_items(items, source_tag="profile-authoritative")
+        return None
+    data = available_list_doc()
+    if data is None:
+        return None
+    items = data.get("skills") if isinstance(data, dict) else data
+    if not isinstance(items, list):
+        return None
+    return _entries_from_items(items)
+
+
+def _entries_from_items(items, source_tag="available-list"):
+    """清单项 → 索引记录（visibility/agent_bound/category/platform/agents 透传）。"""
+    cur_agent = available_list_agent()
+    parsed = []
+    any_agent_info = False
+    for it in items:
+        if isinstance(it, str):
+            it = {"name": it}
+        if not isinstance(it, dict):
+            continue
+        agents = it.get("agents") or []
+        if isinstance(agents, str):
+            agents = [a.strip() for a in re.split(r"[、,，;；/|]+", agents) if a.strip()]
+        agents = [str(a).strip() for a in agents if str(a).strip()]
+        has_agents = "agents" in it  # 显式写了 agents 才算绑定信息；缺字段=未知=视为已绑定
+        if has_agents:
+            any_agent_info = True
+        parsed.append((it, agents, has_agents))
+    out, seen = [], set()
+    for it, agents, has_agents in parsed:
+        nm = (it.get("name") or it.get("skill") or it.get("skill_name") or "").strip()
+        if not _sane_skill_name(nm) or nm.lower() in seen:
+            continue
+        seen.add(nm.lower())
+        desc = (it.get("description") or it.get("desc") or "").strip()
+        trig = it.get("triggers") or []
+        if isinstance(trig, str):
+            trig = [t.strip() for t in re.split(r"[、,，;；/|]+", trig) if t.strip()]
+        status = str(it.get("status") or "").strip().lower()
+        blocked = status in _BLOCKED_STATUS
+        entry = {
+            "name": nm,
+            "description": desc,
+            "triggers": [t for t in trig if t] or _synthesize_triggers(nm, desc),
+            "type": "skill",
+            "path": it.get("path") or "",
+            "has_references": False,
+            "source": source_tag,
+            "mtime": 0,
+            "visibility": "blocked" if blocked else "ready",
+            "agent_bound": True if (cur_agent is None or not any_agent_info
+                                    or not has_agents)
+                           else (cur_agent in agents),
+        }
+        if agents:
+            entry["agents"] = agents
+        if it.get("category"):
+            entry["category"] = str(it["category"]).strip()
+        if it.get("platform"):
+            entry["platform"] = str(it["platform"]).strip()
+        if blocked:
+            entry["excluded"] = True
+            entry["exclude_reason"] = f"blocked（平台绑定状态: {status}，检索/编排不出现）"
+        out.append(entry)
+    return out
 
 
 def make_skill_entry(skill_dir, sk_path, source, mtime=None):
     """解析一个技能目录，产出索引记录。
     用 parse_skill_meta（而非 parse_skill_md）：多提取 description_zh/description_en——
-    有双语 frontmatter 的技能才能被中文 query 检索到（跨语言可发现性）。"""
+    有双语 frontmatter 的技能才能被中文 query 检索到（跨语言可发现性）。
+    frontmatter 名无效时回退目录名，两者都无效（纯符号垃圾目录）返回 None 不入索引。
+    frontmatter 没写触发词时用 _synthesize_triggers 从名称切分+描述里自动推导，
+    否则无触发词技能（平台库 242/349）在检索里几乎不可命中。"""
     meta = skillmd.parse_skill_meta(sk_path)
-    nm = meta.get("name") or os.path.basename(skill_dir)
+    nm = meta.get("name") or ""
+    if not _sane_skill_name(nm):
+        nm = os.path.basename(skill_dir) or ""
+    if not _sane_skill_name(nm):
+        return None
     desc = meta.get("description") or meta.get("description_zh") or ""
     if mtime is None:
         try:
@@ -117,12 +273,13 @@ def make_skill_entry(skill_dir, sk_path, source, mtime=None):
     entry = {
         "name": nm,
         "description": desc,
-        "triggers": skillmd.extract_triggers(desc),
+        "triggers": skillmd.extract_triggers(desc) or _synthesize_triggers(nm, desc),
         "type": "skill",
         "path": skill_dir,
         "has_references": has_ref,
         "source": source,
         "mtime": mtime,
+        "visibility": "ready",
     }
     zh = meta.get("description_zh")
     if zh and zh != desc:
@@ -130,7 +287,14 @@ def make_skill_entry(skill_dir, sk_path, source, mtime=None):
     return entry
 
 
-def scan_skills(broad="auto"):
+def scan_skills(broad="auto", ignore_list=False):
+    # 权威可用清单模式：inputs/available_skills.json 存在时，技能索引=清单本身
+    # （本智能体真正绑定可用的技能），约定根/广域/固定根的磁盘扫描全部让位——
+    # 平台共享库里的技能再多也不是本智能体能加载的，扫进来只会污染检索口径。
+    # ignore_list=True 绕过清单走常规扫描（供 off-list 全量视图采集）。
+    avail = None if ignore_list else available_list_entries()
+    if avail is not None:
+        return avail
     out, seen, seen_names = [], set(), set()
     for root, sk in enumerate_skill_md(broad):
         rk = os.path.realpath(sk)
@@ -138,6 +302,8 @@ def scan_skills(broad="auto"):
             continue
         seen.add(rk)
         e = make_skill_entry(os.path.dirname(sk), sk, root)
+        if e is None:
+            continue  # 纯符号垃圾目录（名称无效），不入索引
         if e["name"].lower() in seen_names:
             continue  # 同名技能只索引一次（多位置安装的去重，大小写不敏感）
         seen_names.add(e["name"].lower())
@@ -508,7 +674,7 @@ def probe_report():
     lines.append(f"  → 自身相对候选: {self_relative_roots() or '（无）'}")
     lines.append(f"cwd: {os.getcwd()}   HOME: {expand('~')}")
     if only_dirs():
-        lines.append("模式: SKILL_INDEXER_ONLY_DIRS=1（只用显式给的根，不掺自身相对/内置默认）")
+        lines.append("模式: SKILL_GATEWAY_ONLY_DIRS=1（只用显式给的根，不掺自身相对/内置默认）")
     lines.append("")
     lines.append("## 约定/配置的扫描根")
     lines.append(f"{'来源':<8} {'存在':<5} {'技能数':<6} 路径")
@@ -543,10 +709,10 @@ def probe_report():
     lines.append("")
     if total == 0 and not bd:
         lines.append("结论：这台机器上没扫到任何 SKILL.md。三种处理方式：")
-        lines.append("  1) 把技能仓库目录写进 skill_indexer.config.json 的 skill_roots；")
-        lines.append("  2) 设 SKILL_INDEXER_SKILL_DIRS 环境变量指向它；")
+        lines.append("  1) 把技能仓库目录写进 skill_gateway.config.json 的 skill_roots；")
+        lines.append("  2) 设 SKILL_GATEWAY_SKILL_DIRS 环境变量指向它；")
         lines.append("  3) 平台不把技能落盘时，用 import 把平台的技能清单导进索引。")
     elif total == 0:
         lines.append(f"结论：约定根 0 项，但有 {len(bd)} 个广域候选。本次已自动走广域兜底；"
-                     "想固定下来就把对应目录写进 skill_indexer.config.json 的 skill_roots。")
+                     "想固定下来就把对应目录写进 skill_gateway.config.json 的 skill_roots。")
     return "\n".join(lines)

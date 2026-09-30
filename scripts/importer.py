@@ -112,5 +112,88 @@ def to_entries(items, source_tag="import"):
             "has_references": False,
             "source": source_tag,
             "mtime": 0,
+            "visibility": "ready",
         })
     return out
+
+
+def parse_source_raw(source):
+    """同 parse_source 的分派（文件/-/文本），但 JSON 项**原样返回**，保留
+    status/category/platform/agents 等扩展字段——供 agent-index 生成权威清单。"""
+    if source == "-":
+        text, kind = sys.stdin.read(), "text"
+    elif os.path.isfile(source):
+        with open(source, encoding="utf-8", errors="replace") as f:
+            text = f.read()
+        kind = "json" if source.lower().endswith(".json") else "text"
+    else:
+        text = source
+        kind = "json" if text.lstrip().startswith(("{", "[")) else "text"
+
+    if kind == "json":
+        try:
+            data = json.loads(text)
+        except Exception:
+            data = None
+        if data is not None:
+            if isinstance(data, dict):
+                for k in ("skills", "entries", "items", "list", "available_skills"):
+                    if isinstance(data.get(k), list):
+                        data = data[k]
+                        break
+                else:
+                    data = [data]
+            if isinstance(data, list):
+                return [it for it in data if isinstance(it, (dict, str))]
+
+    out = []
+    for line in text.splitlines():
+        e = _line_to_entry(line)
+        if e:
+            out.append(e)
+    return out
+
+
+def to_available_list(items, agent_name=None, old_doc=None):
+    """把平台/Agent 绑定清单转成权威可用清单 doc（inputs/available_skills.json 的内容）。
+    - agent_name 写入顶层 current_agent，并作为每项默认 agents；
+    - 每项保留 name/description/triggers/path/status/category/platform 原值；
+    - 幂等：新清单缺某字段（category/platform/description 等）时用旧清单同名条目的值补位；新值优先。
+    """
+    old_map = {}
+    if isinstance(old_doc, dict):
+        for it in old_doc.get("skills") or []:
+            if isinstance(it, dict) and it.get("name"):
+                old_map[str(it["name"]).strip().lower()] = it
+    skills = []
+    for it in items:
+        if isinstance(it, str):
+            it = _line_to_entry(it) or {}
+        if not isinstance(it, dict):
+            continue
+        name = _clean_name(it.get("name") or it.get("skill")
+                           or it.get("skill_name") or it.get("title"))
+        if not name:
+            continue
+        old = old_map.get(name.lower(), {})
+        rec = {"name": name}
+        for k in ("description", "desc", "summary", "triggers", "path",
+                  "status", "category", "platform"):
+            v = it.get(k)
+            if v in (None, ""):
+                v = old.get(k)
+            if v not in (None, ""):
+                rec[k] = v
+        agents = it.get("agents")
+        if not agents:
+            agents = old.get("agents")
+        if not agents and agent_name:
+            agents = [agent_name]
+        if agents:
+            rec["agents"] = agents
+        skills.append(rec)
+    doc = {}
+    if agent_name:
+        doc["current_agent"] = agent_name
+    doc["skills"] = skills
+    return doc

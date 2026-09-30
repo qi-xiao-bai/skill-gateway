@@ -653,6 +653,9 @@ def _collect_chunks(broad, entries, old_doc=None, stats=None):
     索引键用条目的 frontmatter 名（按真实路径匹配条目），与条目索引/图谱边对齐；
     无条目的目录才退回目录名；不同目录解析出同名条目时保留先见（与 scan_skills 一致）。
     返回 (all_chunks, file_mtimes, total_bytes, skill_dirs, fed_chunks)。"""
+    # 口径过滤：excluded（.skillexclude 规则 / 清单 blocked / 平台未绑定 off-list）
+    # 不进正文索引——content-find/chat 内容块的可见性与主检索一致，构建也不再白耗时
+    entries = [e for e in entries if not e.get("excluded")]
     name_to_entry = {}
     path_to_entry = {}
     for e in entries:

@@ -783,7 +783,7 @@
       </svg>
     </div>
     <div class="brand-title">
-      <span data-i18n="app_title">Skill Indexer</span>
+      <span data-i18n="app_title">Skill Gateway</span>
       <span class="version-tag">v2.0</span>
     </div>
 
@@ -820,6 +820,7 @@
   <div class="nav-right">
     <div class="filter-pills">
       <button class="filter-btn active" data-filter="all" data-i18n="filter_all">全部</button>
+      <button class="filter-btn" data-filter="ready" data-i18n="filter_ready">平台可用</button>
       <button class="filter-btn" data-filter="skill" data-i18n="filter_skill">仅技能</button>
       <button class="filter-btn" data-filter="mcp" data-i18n="filter_mcp">仅MCP</button>
       <button class="filter-btn" data-filter="excluded" data-i18n="filter_excluded">已排除</button>
@@ -928,7 +929,9 @@
     </div>
     <div class="legend-toggles">
       <label class="legend-toggle-label">
-        <input type="checkbox" id="toggleExcluded" checked>
+        <input type="checkbox" id="toggleExcluded">
+        <!-- 默认不显示排除技能：索引口径=平台可用；要看全量再勾 -->
+
         <span data-i18n="opt_show_excluded">显示已排除技能</span>
       </label>
       <label class="legend-toggle-label">
@@ -954,12 +957,13 @@ const edgeTypesSeen = __DATA_EDGE_TYPES__;
 // Internationalization Dictionary (中英双语)
 const I18N = {
   zh: {
-    app_title: "Skill Indexer",
+    app_title: "Skill Gateway",
     stat_skills: "技能",
     stat_mcps: "MCP / 连接器",
     stat_edges: "关系",
     search_placeholder: "搜索技能、MCP、触发词或描述... (按 / 聚焦)",
     filter_all: "全部",
+    filter_ready: "平台可用",
     filter_skill: "仅技能",
     filter_mcp: "仅MCP/连接器",
     filter_excluded: "已排除",
@@ -1019,12 +1023,13 @@ const I18N = {
     edge_unknown: "关联",
   },
   en: {
-    app_title: "Skill Indexer",
+    app_title: "Skill Gateway",
     stat_skills: "Skills",
     stat_mcps: "MCP & Connectors",
     stat_edges: "Edges",
     search_placeholder: "Search skills, MCPs, triggers... (Press / to focus)",
     filter_all: "All",
+    filter_ready: "Platform Ready",
     filter_skill: "Skills",
     filter_mcp: "MCP / Connectors",
     filter_excluded: "Excluded",
@@ -1621,6 +1626,24 @@ function renderInspector(d) {
 
     ${alertExcludedHtml}
 
+    ${(() => {
+      const vis = d.visibility || 'ready';
+      const visTxt = vis === 'ready' ? (currentLang === 'zh' ? '平台可用' : 'Platform Ready')
+                   : vis === 'off-list' ? (currentLang === 'zh' ? '平台未绑定（仅全量视图）' : 'Off-list (full view only)')
+                   : (currentLang === 'zh' ? '平台标记不可用' : 'Blocked');
+      const rows = [];
+      if (d.category) rows.push(`<div class="guide-row"><strong>${currentLang === 'zh' ? '业务分类' : 'Category'}:</strong> <span>${escapeHtml(d.category)}</span></div>`);
+      if (d.platform) rows.push(`<div class="guide-row"><strong>${currentLang === 'zh' ? '归属平台' : 'Platform'}:</strong> <span>${escapeHtml(d.platform)}</span></div>`);
+      if (d.source) rows.push(`<div class="guide-row"><strong>${currentLang === 'zh' ? '来源' : 'Source'}:</strong> <span>${escapeHtml(d.source)}</span></div>`);
+      if (Array.isArray(d.agents) && d.agents.length) rows.push(`<div class="guide-row"><strong>${currentLang === 'zh' ? '绑定 Agent' : 'Bound Agents'}:</strong> <span>${escapeHtml(d.agents.join('、'))}</span></div>`);
+      else if (d.agent_bound === false) rows.push(`<div class="guide-row"><strong>${currentLang === 'zh' ? '绑定 Agent' : 'Bound Agents'}:</strong> <span>${currentLang === 'zh' ? '未绑定当前 Agent' : 'Not bound to current agent'}</span></div>`);
+      rows.push(`<div class="guide-row"><strong>${currentLang === 'zh' ? '可见性' : 'Visibility'}:</strong> <span>${visTxt}</span></div>`);
+      return `<div>
+        <div class="section-label"><span>${currentLang === 'zh' ? '归属与口径' : 'Ownership & Visibility'}</span></div>
+        <div class="section-content">${rows.join('')}</div>
+      </div>`;
+    })()}
+
     <div>
       <div class="section-label">
         <span>${t("desc_label")}</span>
@@ -1690,6 +1713,7 @@ function applyCategoryFilter() {
 
   nodeElements.style("display", d => {
     if (d.excluded && !showExcluded) return "none";
+    if (currentFilter === "ready" && (d.visibility || "ready") !== "ready") return "none";
     if (currentFilter === "skill" && d.type !== "skill") return "none";
     if (currentFilter === "mcp" && d.type !== "mcp") return "none";
     if (currentFilter === "excluded" && !d.excluded) return "none";
@@ -1702,6 +1726,7 @@ function applyCategoryFilter() {
     const sEx = sNode ? sNode.excluded : false;
     const tEx = tNode ? tNode.excluded : false;
     if ((sEx || tEx) && !showExcluded) return "none";
+    if (currentFilter === "ready" && ((sNode.visibility || "ready") !== "ready" || (tNode.visibility || "ready") !== "ready")) return "none";
     if (currentFilter === "skill" && (sNode.type !== "skill" || tNode.type !== "skill")) return "none";
     if (currentFilter === "mcp" && (sNode.type !== "mcp" || tNode.type !== "mcp")) return "none";
     if (currentFilter === "excluded" && (!sEx && !tEx)) return "none";

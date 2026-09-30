@@ -1,0 +1,26 @@
+{
+  "_说明": "【示例文件，不生效】把它重命名为 available_skills.json 才会激活「权威可用清单」模式：技能索引=清单本身（当前平台本智能体绑定、可加载的技能），磁盘扫描让位为 off-list 附加层（入索引但默认检索不出现，--all 全量视图可见）。顶层 current_agent 声明当前智能体（也可用环境变量 SKILL_GATEWAY_AGENT），每项可选 agents 数组声明被哪些智能体绑定——有了它，--agent 参数才收窄到 Agent 绑定口径（非默认，默认平台口径）。每项字段：name 必填；description 建议中英双语；triggers/path/status/category/platform/agents 可选。status 为 blocked/disabled 的条目入索引但标记已排除。绑定关系变化后更新此清单并重跑 build。",
+  "current_agent": "代码审查员",
+  "skills": [
+    {
+      "name": "crm-support",
+      "description": "示例：CRM 运维支持技能 CRM operations support: workflows, approval chains, dual-sign process",
+      "triggers": ["CRM", "合同双签", "审批"],
+      "path": "/app/data/skills/crm-support",
+      "category": "CRM业务",
+      "platform": "数字员工-网页端",
+      "agents": ["代码审查员"],
+      "status": "ready"
+    },
+    {
+      "name": "skill-gateway",
+      "description": "跨技能检索与编排网关 skill gateway: retrieval and orchestration",
+      "triggers": ["技能索引", "技能编排"],
+      "path": "",
+      "category": "平台工具",
+      "platform": "数字员工-网页端",
+      "agents": [],
+      "status": "blocked"
+    }
+  ]
+}

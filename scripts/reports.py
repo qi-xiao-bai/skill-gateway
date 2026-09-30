@@ -49,6 +49,23 @@ def stats_text(entries, edges=None):
         out.append("  （空索引）")
 
     out.append("")
+    out.append("## 按可见性（平台口径）")
+    vis_names = {"ready": "平台可用（默认检索口径）", "off-list": "平台未绑定（仅 --all 全量视图）",
+                 "blocked": "平台标记不可用（已排除）"}
+    for v, c in sorted(cov.get("by_visibility", {}).items()):
+        out.append(f"  {c:5d}  {vis_names.get(v, v)}")
+    if not cov.get("by_visibility"):
+        out.append("  （空索引）")
+
+    if cov.get("agent_bound") or cov.get("agent_unbound"):
+        out.append("")
+        out.append("## Agent 绑定（--agent 口径，非默认）")
+        out.append(f"  当前Agent已绑定  {cov['agent_bound']:5d}")
+        out.append(f"  未绑定           {cov['agent_unbound']:5d}")
+
+
+
+    out.append("")
     out.append("## 全文覆盖（detail 能不能真的取出全文）")
     out.append(f"  完整 SKILL.md      {cov['full_text']:5d}")
     out.append(f"  桥接占位(非全文)    {cov['stub']:5d}")
@@ -331,10 +348,9 @@ def onboard_text(entries, edges, name):
     return "\n".join(lines)
 
 
-# dashboard 前端模板是独立资产文件（scripts/dashboard_template.html）：
+# dashboard 前端模板是独立资产文件（templates/dashboard_template.html）：
 # 此前 ~2000 行 HTML/CSS/JS 内嵌在本文件字符串里，lint、格式化、前端调试全被绑架。
-_TEMPLATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                              "dashboard_template.html")
+_TEMPLATE_FILE = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "templates", "dashboard_template.html"))
 
 
 def _load_template():
@@ -390,6 +406,11 @@ def generate_dashboard_html(entries, edges):
             "exclude_reason": e.get("exclude_reason", ""),
             "has_references": bool(e.get("has_references")),
             "source": e.get("source", ""),
+            "visibility": e.get("visibility", "ready"),
+            "category": e.get("category", ""),
+            "platform": e.get("platform", ""),
+            "agent_bound": e.get("agent_bound"),
+            "agents": e.get("agents", []),
         })
 
     links = []

@@ -1,0 +1,4 @@
+{
+  "_说明": "平台侧 MCP/连接器清单（可选）。平台的 MCP/连接器是平台侧服务、不以文件形式落在技能运行环境（索引 MCP=0 的根因），在此手工登记后重跑 build 即可入索引与 dashboard。connectors 数组每项：{name 必填, description 建议中英双语（分词语言敏感）, triggers 可选}；也可用 mcpServers 键登记标准 MCP 服务。保持空数组即表示当前没有需要登记的平台连接器。",
+  "connectors": []
+}

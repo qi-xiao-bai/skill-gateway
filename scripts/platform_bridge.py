@@ -86,7 +86,7 @@ def _unique_dirname(safe, used):
 
 def default_src():
     """默认清单来源：环境变量 → <技能根>/inputs/platform_skills.json → inputs/ 下任意 json。"""
-    env = os.environ.get("PLATFORM_SKILLS_JSON")
+    env = os.getenv("PLATFORM_SKILLS_JSON")
     if env and os.path.isfile(env):
         return env
     inputs = os.path.join(ROOT, "inputs")
@@ -103,7 +103,7 @@ def default_src():
 def default_mirror():
     """默认镜像目录：<技能根>/inputs/platform_mirror —— 放在技能包内，
     与"清单暂存"同一处（都是易失期运行时缓存），且不污染宿主 $HOME。
-    可用 --mirror 或 SKILL_INDEXER_MIRROR 覆盖。"""
+    可用 --mirror 或 SKILL_GATEWAY_MIRROR 覆盖。"""
     return os.path.join(ROOT, "inputs", "platform_mirror")
 
 
@@ -287,12 +287,18 @@ def status_text(mirror, src=None):
 
 def _mirror_steps(python, mirror, steps):
     """以子进程调用原 build_index.py（不改其逻辑）；
-    用 SKILL_INDEXER_SKILL_DIRS 指向镜像 + SKILL_INDEXER_ONLY_DIRS=1 —— 只扫镜像，不掺本机目录。
-    置 SKILL_INDEXER_BRIDGE_RUN=1 防止 index 的自愈钩子递归。"""
-    env = dict(os.environ)
-    env["SKILL_INDEXER_SKILL_DIRS"] = mirror
-    env["SKILL_INDEXER_ONLY_DIRS"] = "1"
-    env["SKILL_INDEXER_BRIDGE_RUN"] = "1"
+    用 SKILL_GATEWAY_SKILL_DIRS 指向镜像 + SKILL_GATEWAY_ONLY_DIRS=1 —— 只扫镜像，不掺本机目录。
+    置 SKILL_GATEWAY_BRIDGE_RUN=1 防止 index 的自愈钩子递归。"""
+    # 子进程环境按需白名单（不整包传递 os.environ——避免泄漏密钥类变量）
+    allow = ("PATH", "HOME", "SYSTEMROOT", "SYSTEMDRIVE", "TEMP", "TMP", "APPDATA",
+             "LOCALAPPDATA", "USERPROFILE", "PYTHONPATH", "LANG", "LC_ALL",
+             "COMSPEC", "PATHEXT", "WINDIR", "PROGRAMFILES")
+    env = {k: os.environ[k] for k in allow if k in os.environ}
+    env.update({k: v for k, v in os.environ.items()
+                if k.startswith(("SKILL_GATEWAY_", "PLATFORM_"))})
+    env["SKILL_GATEWAY_SKILL_DIRS"] = mirror
+    env["SKILL_GATEWAY_ONLY_DIRS"] = "1"
+    env["SKILL_GATEWAY_BRIDGE_RUN"] = "1"
     entry = os.path.join(SCRIPTS_DIR, "build_index.py")
     ok = True
     for step in steps:
@@ -321,7 +327,7 @@ def mirror_and_reindex(src=None, mirror=None, steps=("index", "audit"),
     force=清单没变也重落；keep=已存在的镜像目录不覆盖。
     返回 dict(ok, items, created, n_full, fresh, partial, error)。"""
     python = python or sys.executable
-    mirror = os.path.abspath(paths.expand(mirror or os.environ.get("SKILL_INDEXER_MIRROR")
+    mirror = os.path.abspath(paths.expand(mirror or os.environ.get("SKILL_GATEWAY_MIRROR")
                                          or default_mirror()))
     src = src if src is not None else default_src()
     if src is None:
@@ -403,7 +409,7 @@ def main():
     ap.add_argument("--keep", action="store_true", help="保留已存在的镜像目录（不覆盖）")
     a = ap.parse_args()
 
-    mirror = os.path.abspath(paths.expand(a.mirror or os.environ.get("SKILL_INDEXER_MIRROR")
+    mirror = os.path.abspath(paths.expand(a.mirror or os.environ.get("SKILL_GATEWAY_MIRROR")
                                           or default_mirror()))
 
     if a.status:

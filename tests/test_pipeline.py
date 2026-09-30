@@ -143,7 +143,7 @@ class TestPipeline(unittest.TestCase):
         self.assertIn("```mermaid", md)
         self.assertIn("flowchart LR", md)
         self.assertIn("阶段协同与上下文传递矩阵", md)
-        self.assertIn("[skill-indexer] 技能串联编排:", md)
+        self.assertIn("[skill-gateway] 技能串联编排:", md)
 
     def test_footnote_text_modes(self):
         entries = [{"name": "solo-skill", "type": "skill", "description": "独立技能无依赖", "triggers": ["独立"]}]
@@ -240,6 +240,120 @@ class TestPipeline(unittest.TestCase):
         self.assertIsInstance(entries, list)
         self.assertIsInstance(edges, list)
         self.assertIn("kept", st)
+
+    # ── 检索质量回归（2026-09-30 位置加权 + 名称提权 + 历史事故） ────────────
+    def test_name_hit_beats_generic_gram_stack(self):
+        """2026-09-30 真库事故等比回归：IDF_CAP 把真领域词（df=3）与泛化碎片
+        （df=6-19）拉平成同一权重后，无关技能靠堆描述碎片（失败+排查+自动）压过
+        名称命中的正解（实测 salesforce-develop 28.5 分被挤到 #21 开外、top 8 看不见）。
+        位置加权 + 名称按稀有度提权后，正解必须回到 top 3 且排第一。"""
+        import retrieval
+
+        entries = []
+        # 散族 filler：8 条共享 失败/排查（df 小 → raw IDF 高 → 被封顶），其余共享 自动/生成
+        for i in range(250):
+            if i < 8:
+                desc = f"模块{i}运行失败 自动生成报告 排查思路{i}"
+            else:
+                desc = f"模块{i} 自动生成报告 内容{i}"
+            entries.append(
+                {"name": f"filler-{i}", "type": "skill", "description": desc, "triggers": []}
+            )
+        entries.append({
+            "name": "salesforce-develop",
+            "type": "skill",
+            "description": ("Salesforce development workflow and guardrails. Apex classes, "
+                            "triggers, controllers, schedulers, object fields, approval-related logic."),
+            "triggers": ["salesforce"],
+        })
+        query = "Salesforce RC_ContractTrigger 合同自动生成失败 FIELD_CUSTOM_VALIDATION 报错排查"
+        hits = retrieval.search(entries, query, top=10)
+        top3 = [e["name"] for _, e, _ev in hits[:3]]
+        self.assertIn("salesforce-develop", top3,
+                      "名称命中的正解被堆描述碎片的垃圾挤出 top 3")
+        self.assertEqual(hits[0][1]["name"], "salesforce-develop")
+
+    def test_name_bonus_scales_with_rarity(self):
+        """名称命中加分按命中词稀有度缩放：同一名称命中机制下，命中稀有词（df=1）
+        的条目得分要显著高于命中满库常见词的条目（固定 +3 时代两者差距被压平）。
+        同一条目池、两次检索，唯一变量是名称命中词的稀有度。"""
+        import retrieval
+
+        entries = [
+            {"name": "zetaquartz", "type": "skill",
+             "description": "zetaquartz 专用工具", "triggers": []},
+            {"name": "config-helper", "type": "skill",
+             "description": "config file helper", "triggers": []},
+        ]
+        entries += [
+            {"name": f"pad-{i}", "type": "skill",
+             "description": f"config file {i}", "triggers": []}
+            for i in range(60)
+        ]
+        rare_hits = retrieval.search(entries, "zetaquartz", top=3)
+        common_hits = retrieval.search(entries, "config", top=3)
+        self.assertTrue(rare_hits and common_hits)
+        self.assertEqual(rare_hits[0][1]["name"], "zetaquartz")
+        self.assertEqual(common_hits[0][1]["name"], "config-helper")
+        self.assertGreater(
+            rare_hits[0][0], common_hits[0][0] * 5,
+            "稀有词名称命中与常见词名称命中的加分差距未拉开",
+        )
+
+    def test_single_rare_word_evidence_bounded(self):
+        """2026-09-25 龙易查 6298 分假第一回归：单个稀有词的证据贡献有 IDF_CAP 上限，
+        不该独自扛起整个相关度；单概念描述命中仍要可见（查全率保留）。
+        本夹具的命中是"仅描述"证据（无名称命中加分），故上界 = IDF_CAP×LOC_DESC+0.5。"""
+        import retrieval
+
+        entries = [
+            {"name": "longfox-onboarding", "type": "skill",
+             "description": "龙易查 入职引导 使用说明", "triggers": []},
+        ]
+        entries += [
+            {"name": f"pad-{i}", "type": "skill",
+             "description": f"其他内容{i} 使用说明", "triggers": []}
+            for i in range(30)
+        ]
+        hits = retrieval.search(entries, "龙易查", top=5)
+        self.assertTrue(hits, "单概念描述命中被过滤，查全率受损")
+        for score, _e, _ev in hits:
+            self.assertLessEqual(
+                score,
+                retrieval.IDF_CAP * retrieval.LOC_DESC + 0.5,
+                "单个稀有词证据贡献超出上限，假第一风险回归",
+            )
+
+    def test_maximal_evidence_groups_adjacent_fragments(self):
+        """2026-09-28 wps-knowledgebase 75.5 分假命中回归："本地仓库"拆成的相邻 gram
+        （本地仓/地仓库/仓库里…）互不包含却是同一词组的碎片，只计一份证据。"""
+        import retrieval
+
+        query = "本地仓库里的配置"
+        overlap = retrieval.terms(query) & retrieval.terms("本地仓库配置说明")
+        maximal = retrieval._maximal_evidence(overlap, query)
+        self.assertLessEqual(
+            len(maximal), max(1, len(overlap) // 2),
+            f"同源碎片未归组：{sorted(overlap)} → {sorted(maximal)}",
+        )
+
+    def test_high_freq_combo_filtered_by_gate(self):
+        """"标签+当前"高频凑数回归：全库高频词组合的证据 IDF 合计低于门槛时被过滤。
+        注意：本测试同时钉住 LOC_DESC 与 EVIDENCE_MIN_WEIGHT 的耦合
+        （ev ≈ 1.01 vs 门槛 1.23，LOC_DESC 抬到 ≥0.62 会翻转）。"""
+        import retrieval
+
+        entries = [
+            {"name": "wps-knowledgebase", "type": "skill",
+             "description": "知识库 标签 当前 文档管理", "triggers": []},
+        ]
+        entries += [
+            {"name": f"pad-{i}", "type": "skill",
+             "description": f"知识库 标签 当前 文档{i}", "triggers": []}
+            for i in range(40)
+        ]
+        hits = retrieval.search(entries, "标签 当前", top=10)
+        self.assertEqual(hits, [], "高频词组合凑数未被门槛拦截")
 
     # ── Profile / 画像（原测试保留） ─────────────────────────────────────────
     def test_skill_profile_loading(self):

@@ -108,18 +108,42 @@ def _parallel_stage(i, members, evidence):
     }
 
 
-def build_pipeline(query, entries=None, edges=None, seed_top=SEED_TOP, _retried=False):
+def build_pipeline(query, entries=None, edges=None, seed_top=SEED_TOP, _retried=False,
+                   include_off_list=False, agent_only=False):
     """图谱驱动编排：
     1. retrieval.search 按任务检索种子技能（证据 = 命中词）；
     2. 沿 depends_on 边把被依赖技能纳入子图（支撑节点）；
     3. 对子图做 Kahn 拓扑分层 → 每层一个阶段（层内技能并行）；
     4. 无依赖关系的种子 → "并行候选"阶段，如实标注、不硬套模板；
     5. 完全无命中 → mode="empty"（触发过一次增量自愈重试）。
+    include_off_list=True 时编排种子放行平台未绑定(off-list)技能（全量审计视图）。
     返回 dict(task, mode, basis, stages, skills, notes)。"""
     entries, edges = _load_context(entries, edges)
-    global_hits = retrieval.search(entries, query, top=seed_top) if entries else []
+    global_hits = (retrieval.search(entries, query, top=seed_top,
+                                    include_off_list=include_off_list,
+                                    agent_only=agent_only)
+                   if entries else [])
     seeds = [e for _s, e, _ov in global_hits]
     evidence = {e["name"].lower(): ov for _s, e, ov in global_hits}
+    twin_notes = []
+    # 并列候选人工确认：Top 种子打分高度接近时说明多个同职技能难分伯仲，
+    # 不擅自定夺——写进 notes 交人工确认后再采纳（契约红线）。
+    if global_hits and global_hits[0][1].get("ambiguous"):
+        tg = global_hits[0][1]["tie_group"]
+        twin_notes.append(
+            "⚠ 检索 Top 候选打分高度接近，需人工确认用哪个："
+            + " / ".join(f"[{t['name']}]({t['score']})" for t in tg)
+        )
+    # 近似同名族提示：种子命中 crm-support-snake 时，crm-support 这类孪生技能
+    # 可能才是调用方想要的变体——写进 notes 让 Agent 采纳前先甄别
+    for e in seeds:
+        twins = retrieval._name_twins(e.get("name", ""), entries)
+        if twins:
+            twin_notes.append(
+                f"种子 [{e['name']}] 有近似同名技能："
+                + "、".join(f"[{t['name']}]" for t in twins)
+                + "；采纳前先 detail 确认变体。"
+            )
 
     if not seeds and not _retried:
         refreshed_entries, refreshed_edges, st, has_changes = index_store.auto_update_on_miss(
@@ -129,6 +153,7 @@ def build_pipeline(query, entries=None, edges=None, seed_top=SEED_TOP, _retried=
             return build_pipeline(
                 query, entries=refreshed_entries, edges=refreshed_edges,
                 seed_top=seed_top, _retried=True,
+                include_off_list=include_off_list, agent_only=agent_only,
             )
 
     if not seeds:
@@ -214,7 +239,7 @@ def build_pipeline(query, entries=None, edges=None, seed_top=SEED_TOP, _retried=
         "basis": basis,
         "stages": stages,
         "skills": [n for st_ in stages for n in st_["skill_names"]],
-        "notes": notes,
+        "notes": notes + twin_notes,
     }
 
 
@@ -238,7 +263,7 @@ def format_pipeline_markdown(pipe):
     if pipe["mode"] == "empty":
         lines.append("> ⚠️ **本地技能库无匹配项通知**：检索无命中（已触发实时增量自愈）。")
         lines.append("> " + " ".join(pipe["notes"]))
-        lines.append("\n[skill-indexer] 编排未生成：无候选技能，请换词或先 `list` 浏览。")
+        lines.append("\n[skill-gateway] 编排未生成：无候选技能，请换词或先 `list` 浏览。")
         return "\n".join(lines)
 
     if pipe["mode"] == "topological":
@@ -285,6 +310,11 @@ def format_pipeline_markdown(pipe):
             ev = _evidence_str(st["evidence"].get(m["name"], []))
             pin_tag = " ★ [用户置顶常用技能]" if m["name"].lower() in pinned else ""
             lines.append(f"- **目标技能**：`{m['name']}`{pin_tag}")
+            cp_tag = " / ".join(x for x in (m.get("category"), m.get("platform")) if x)
+            if cp_tag:
+                lines.append(f"  - 平台/分类：{cp_tag}")
+            if m.get("agent_bound") is False:
+                lines.append("  - ⚠ Agent 绑定：未绑定当前 Agent（--all/--agent 口径外，采纳前需人工确认可用性）")
             lines.append(f"  - 入选依据：检索命中证据（{ev}）")
             lines.append(f"  - 技能定位：{_desc_of(m, 140)}")
             trigs = "、".join((m.get("triggers") or [])[:4])
@@ -319,22 +349,25 @@ def format_pipeline_markdown(pipe):
         "4. **阶段留痕验证**：阶段交接时简要总结当前产物，并告知用户即将流转至下一技能。\n"
     )
 
+    lines.append("## 5. 留痕脚注（原样附在最终答复末尾，不得改写或省略）")
+    lines.append("")
+    lines.append("```text")
     lines.append(footnote_text(pipe))
+    lines.append("```")
     return "\n".join(lines)
 
 
 def footnote_text(pipe):
     """网关留痕脚注（供调用方输出；数字全部来自 pipe 实际数据）。"""
     if pipe["mode"] == "empty":
-        return "[skill-indexer] 技能串联编排: 无候选命中 | 未生成流水线 | 建议换词或 list 浏览"
+        return "[skill-gateway] 技能串联编排: 无候选命中 | 未生成流水线 | 建议换词或 list 浏览"
     if pipe["mode"] == "parallel-candidates":
         chain = " / ".join(f"[{n}]" for n in pipe["skills"])
         return (
-            f"[skill-indexer] 并行候选编排: {chain} | 图谱无依赖边，不伪造流水线 | "
+            f"[skill-gateway] 并行候选编排: {chain} | 图谱无依赖边，不伪造流水线 | "
             "由执行 Agent 甄别采纳"
         )
     chain = " → ".join(f"[{'、'.join(st['skill_names'])}]" for st in pipe["stages"])
     return (
-        f"[skill-indexer] 技能串联编排: {chain} | 图谱拓扑自动生成 "
-        f"{len(pipe['stages'])} 阶段流水线 | 消除多次人工选型与上下文断层"
+        f"[skill-gateway] 技能串联编排: {chain} | 图谱拓扑 {len(pipe['stages'])} 阶段"
     )
