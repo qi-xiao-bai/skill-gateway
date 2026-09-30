@@ -74,7 +74,7 @@
 | 缺什么 | `no_description` / `no_triggers` 的**名单**——直接影响"被 AI 发现"的概率，配 `doctor` 看明细 |
 | 关系图 | `edges` 条数；`stats` 另算孤立节点（不与任何技能相连的技能） |
 
-## 产物一览（默认写在 `output/` 目录，可通过 `skill_indexer.config.json` 的 `out_dir` 或环境变量 `SKILL_INDEXER_OUT_DIR` 覆盖）
+## 产物一览（默认写在 `output/` 目录，可通过 `skill_gateway.config.json` 的 `out_dir` 或环境变量 `SKILL_GATEWAY_OUT_DIR` 覆盖）
 | 文件 | 内容 | 典型用途 |
 |------|------|----------|
 | `skill-index.llms.txt` | dense 纯文本索引（含头块） | **喂给 LLM / 平台启动加载** |

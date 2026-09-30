@@ -17,12 +17,12 @@
 
 - 本地命中技能时：Agent 必须采纳命中技能的规范与指导推进交付。
 - 本地完全无匹配时：当且仅当 CLI 检索结果明确显示"当前环境未安装匹配技能（已触发实时增量感知且磁盘亦无更新）"时，方可降级为通用能力，并在交付开头输出：
-  `[skill-indexer] 经检索本地技能库，当前环境未安装与本任务匹配的专业技能（已触发实时磁盘感知无更新），已自动降级为通用能力执行。`
+  `[skill-gateway] 经检索本地技能库，当前环境未安装与本任务匹配的专业技能（已触发实时磁盘感知无更新），已自动降级为通用能力执行。`
 
 ### 3. 编排结果排除自身
 
-- indexer 自身也在技能库中，pipeline 编排与检索结果必须排除 `skill-indexer` 自身，防止自环套娃。
-- 实现方式：检索与编排阶段对结果集过滤 `name == "skill-indexer"` 的条目。
+- indexer 自身也在技能库中，pipeline 编排与检索结果必须排除 `skill-gateway` 自身，防止自环套娃。
+- 实现方式：检索与编排阶段对结果集过滤 `name == "skill-gateway"` 的条目。
 
 ---
 
@@ -54,7 +54,7 @@
 
 - **高保真全量扫描**：Python 内存毫秒级内完成全部候选评分排序（5~10ms，0 Token 成本）。
 - **Top-K 硬顶配额**：全局最大输出上限 `MAX_RETRIEVAL_TOP = 20`（`search` 默认 8，`chat` 默认 5）。
-- **动态相似度门槛剪枝**：底线 `MIN_RELEVANCE_SCORE = 0.35`，截断低于 Top 1 得分 25% 的长尾低质技能。
+- **动态相似度门槛剪枝**：底线 `MIN_RELEVANCE_SCORE = 0.35`，截断低于最大证据权重 25% 的长尾低质技能（基准取名称加分/置顶提权之前的证据权重）。
 
 ### 2. 未命中按需增量更新
 
@@ -63,7 +63,7 @@
 
 ### 3. 技能黑名单与排除机制
 
-- 支持在 `skill_profile.json` 的 `exclude_skills`、根目录 `.skillexclude`、`skill_indexer.config.json` 的 `exclude` 或 CLI `--exclude` 声明屏蔽规则（支持通配符 glob）。
+- 支持在 `skill_profile.json` 的 `exclude_skills`、根目录 `.skillexclude`、`skill_gateway.config.json` 的 `exclude` 或 CLI `--exclude` 声明屏蔽规则（支持通配符 glob）。
 - 排除名单中的技能完全脱离检索、问答与流水线推荐池。
 
 ### 4. 图谱可视化排除节点控制
@@ -97,7 +97,7 @@
 ## 换环境后扫不到技能（"0 项"）自愈策略
 
 1. **宿主技能目录不可达**：运行 `python scripts/platform_bridge.py`；平台通道把技能导出到 `inputs/platform_skills.json`，桥接脚本自动将其落入镜像并生成索引。
-2. **技能在磁盘上但不在常规路径**：运行 `python scripts/build_index.py roots` 排查；在 `skill_indexer.config.json` 中配置追加路径，或使用 `index --broad` 广域探测。
+2. **技能在磁盘上但不在常规路径**：运行 `python scripts/build_index.py roots` 排查；在 `skill_gateway.config.json` 中配置追加路径，或使用 `index --broad` 广域探测。
 3. **外部清单直接灌入**：运行 `python scripts/build_index.py import skills.txt`。
 
 ---

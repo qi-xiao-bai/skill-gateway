@@ -1,6 +1,6 @@
 <div align="center">
 
-# skill-indexer
+# skill-gateway
 
 **本地技能智能层 —— 让 Agent 找得到、用得起、串得起它已安装的技能。**
 
@@ -22,7 +22,7 @@
 当 Agent 的技能库超过几十个，三个问题立刻出现：**不知道该用哪个**（选型靠猜）、
 **上下文被吃光**（几百个 SKILL.md 全文常驻）、**多技能任务没人串**（各干各的）。
 
-`skill-indexer` 装进技能目录后，就是 Agent 的**技能库管家**：一键建立全库索引与知识图谱，
+`skill-gateway` 装进技能目录后，就是 Agent 的**技能库管家**：一键建立全库索引与知识图谱，
 此后 Agent 收到任何任务都能秒级选技能、按 `depends_on` 拓扑自动编排流水线，
 而你的上下文成本从 **7,330,470 字符降到 167,772 字符（省 97.7%，44×）**。
 
@@ -32,7 +32,7 @@
 
 ```bash
 # Claude Code / Claude Desktop
-git clone https://github.com/qi-xiao-bai/skill-indexer.git ~/.claude/skills/skill-indexer
+git clone https://github.com/qi-xiao-bai/skill-gateway.git ~/.claude/skills/skill-gateway
 
 # 或其他技能目录（~/.cursor/skills、~/.workbuddy/skills …），或解压到平台技能根
 ```
@@ -60,7 +60,7 @@ git clone https://github.com/qi-xiao-bai/skill-indexer.git ~/.claude/skills/skil
 Agent：（自动执行 pipeline，节选输出）
   > 编排依据：任务检索种子 + 知识图谱 depends_on 拓扑分层
   > 阶段 2：khazix-writer ← 入选依据：检索命中证据（帮我写、写一）
-  [skill-indexer] 技能串联编排: [pdf、skill] → [khazix-writer] | 图谱拓扑自动生成
+  [skill-gateway] 技能串联编排: [pdf、skill] → [khazix-writer] | 图谱拓扑自动生成
 ```
 
 > 💡 **你也可以把 Agent 当运维**：任何时候让 Agent「跑一下技能体检」「看看 dashboard」，
@@ -82,7 +82,7 @@ Agent：（自动执行 pipeline，节选输出）
 ```text
 find ──▶ add ──▶ use ──▶ check        npx skills 等（分发侧：已解决）
 ─────────────────────────────────
-index ─▶ audit ─▶ relate ─▶ orchestrate   skill-indexer（装完之后的世界：本仓库）
+index ─▶ audit ─▶ relate ─▶ orchestrate   skill-gateway（装完之后的世界：本仓库）
 ```
 
 机器读 `skill-index.json`（描述保真 + 图谱边），模型读 `skill-index.llms.txt`

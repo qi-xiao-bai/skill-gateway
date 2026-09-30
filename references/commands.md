@@ -1,6 +1,6 @@
 # 子命令手册（script: `scripts/build_index.py`）
 
-所有命令都在**技能根目录**执行，产物默认写到技能根目录（可用 `SKILL_INDEXER_OUT_DIR` 覆盖）。
+所有命令都在**技能根目录**执行，产物默认写到技能根目录（可用 `SKILL_GATEWAY_OUT_DIR` 覆盖）。
 
 | 命令 | 作用 | 常用参数 |
 |------|------|----------|
@@ -19,7 +19,7 @@
 | `roots` | **扫描根探针**：逐个候选根打印"存在?/找到几个技能"，用于解释"为什么是 0 项" | — |
 | `import` | **导入外部技能清单**（平台不落盘时用）；支持 JSON / 每行 `name: 描述` | `<文件\|-\|文本>` |
 | `list` | 列出全部技能/MCP + 笼统使用建议 | `--type skill\|mcp` `--with-ref` `--limit N` |
-| `search` | 关键词排序检索（IDF 加权 + 命中名加权） | `<关键词>` `--top N` |
+| `search` | 关键词排序检索（IDF 加权 + 命中位置加权 + 名称提权） | `<关键词>` `--top N` |
 | `explain` | 单个技能的详细使用建议 | `<技能名>` |
 | `detail` | 按需打印某技能完整 `SKILL.md` | `<技能名>` |
 | `related` | 找相关的其他技能（读索引里存好的关系边 `depends_on`/`contains`/`overlap`/`similar`） | `<技能名>` `--top N` |
@@ -39,7 +39,7 @@
 |---|---|
 | 开发一个用户认证需求 / 完整开发流程 / 从需求到上线 | `pipeline` |
 | 排查线上慢查询并修复 / 线上 Bug 闭环 | `pipeline` |
-| 合同双签后的后续流程是 / 业务状态机怎么走 | `chat` |
+| 合同审批后的后续流程是 / 业务状态机怎么走 | `chat` |
 | 有哪些技能 / 技能清单 / 有多少个 | `list` |
 | 这个任务该用哪个技能 / 帮我做X | `search` |
 | 某技能怎么用 / 怎么触发 | `explain <技能名>` |
@@ -106,7 +106,7 @@ python scripts/platform_bridge.py --force         # 清单没变也重落
 python scripts/platform_bridge.py --only clean    # 清理上次镜像
 ```
 桥接以子进程调用原 `build_index.py`（**不改 indexer 任何原有逻辑**），并设
-`SKILL_INDEXER_SKILL_DIRS=<镜像>` + `SKILL_INDEXER_ONLY_DIRS=1`，**只扫镜像**，索引结果即平台的技能集。
+`SKILL_GATEWAY_SKILL_DIRS=<镜像>` + `SKILL_GATEWAY_ONLY_DIRS=1`，**只扫镜像**，索引结果即平台的技能集。
 清单指纹（name+description 的 sha1）记在 manifest `.platform_bridge.json` 里，没变就跳过重落 → **幂等**。
 
 ### 生命周期分层（镜像/索引易失，脚本持久）
@@ -123,7 +123,7 @@ python scripts/platform_bridge.py --only clean    # 清理上次镜像
 只要发现"只扫到本技能自己"且技能包里有平台清单，就自动落镜像并重扫。
 **自愈跟随构建档位（两档，绝不静默冒充）**：`index` / `update` 默认建**元数据索引**（诚实标注"仅定位/路由用"，
 不编压缩率数字）；`index --full` / `update --full` 才是**全量构建**——清单缺完整 SKILL.md 就**中止（rc=2）、不写索引**
-并打印取全文步骤。读命令自愈默认同元数据档，`SKILL_INDEXER_NO_AUTO=1` 关闭，桥接子进程 `SKILL_INDEXER_BRIDGE_RUN=1` 防递归。
+并打印取全文步骤。读命令自愈默认同元数据档，`SKILL_GATEWAY_NO_AUTO=1` 关闭，桥接子进程 `SKILL_GATEWAY_BRIDGE_RUN=1` 防递归。
 **日常不必手动敲 `index`**，它只在想强制全量重扫时才用。
 
 > 诚实提醒：平台 `list` 只给 name/description，**不含完整 SKILL.md 正文**；拿它建出来的是"元数据索引"，
@@ -132,14 +132,14 @@ python scripts/platform_bridge.py --only clean    # 清理上次镜像
 > 桥接的价值在 `audit`（token 账本）/ `bundle`（L0/L1/L2）/ `export`（跨平台导出）这些 indexer 独有能力。
 
 ## 配置（扫描根）
-`skill_indexer.config.json`（放在技能根目录）：
+`skill_gateway.config.json`（放在技能根目录）：
 ```json
 {
   "skill_roots": ["/path/to/skills", "~/another-skills-dir"],
   "mcp_configs": ["/path/to/mcp.json"]
 }
 ```
-也可用环境变量：`SKILL_INDEXER_SKILL_DIRS` / `SKILL_INDEXER_MCP_CONFIGS`（用系统路径分隔符分隔）。
+也可用环境变量：`SKILL_GATEWAY_SKILL_DIRS` / `SKILL_GATEWAY_MCP_CONFIGS`（用系统路径分隔符分隔）。
 
 ## 扫描忽略规则（`.skillignore`）
 "扫描时跳过哪些目录"写在 `<技能根>/.skillignore`（gitignore 语法），**不用改代码**。
