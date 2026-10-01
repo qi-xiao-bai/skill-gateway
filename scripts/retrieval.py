@@ -262,6 +262,37 @@ def _name_twins(name, entries):
     return out
 
 
+_CJK_RE = re.compile(r"[一-鿿]")
+
+
+def gap_notice(query, hits):
+    """能力缺口检测：query 的 CJK 词元**全部**未命中任何结果的证据时报告缺口
+    （Top1 多为词面近失，如"代码审查"命中 decision-review-mirror）。
+    部分命中不报（已有相关结果）；纯英文 query 不判（分词语言敏感，EN 未命中属正常）；
+    覆盖判定用包含关系（证据 gram 覆盖其子串/父串 gram，"合同双"覆盖"合同"）。
+    返回 (是否缺口, 提示文案)。"""
+    cjk = {t for t in terms(query) if _CJK_RE.search(t)}
+    if not cjk or not hits:
+        return False, ""
+    evidence = set()
+    for _s, _e, maximal in hits:
+        evidence.update(maximal)
+    uncovered = {t for t in cjk
+                 if not any(t in ev or ev in t for ev in evidence)}
+    if not uncovered or uncovered != cjk:
+        return False, ""  # 有命中=部分覆盖；全命中=更不缺
+    fragments = []
+    for frag in re.findall(r"[一-鿿]+", query or ""):
+        if frag not in fragments:
+            fragments.append(frag)
+    if not fragments:
+        return False, ""
+    msg = ("⚠ 能力缺口：未发现与「" + "」「".join(fragments[:3])
+           + "」业务匹配的绑定技能（Top1 仅为词面命中）——本智能体可能缺少该能力，"
+             "可建议用户新增或绑定对应技能。")
+    return True, msg
+
+
 def _single_char_search(entries, query, top, cli_excludes, include_excluded,
                         agent_only=False):
     """单字查询兜底：terms() 丢弃单字（防噪声），但用户明确只搜一个字时按字面

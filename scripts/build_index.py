@@ -363,6 +363,10 @@ def cmd_search(a):
                 if nb["name"] != e["name"] and nb["name"] not in all_related:
                     all_related.append(nb["name"])
 
+    gap, gap_msg = retrieval.gap_notice(a.query, hits)
+    if gap:
+        print(gap_msg)
+
     # 复杂工程与研发任务场景下，主动引导 pipeline 流水线串联
     # （只认多字职责词——单字"做/写/修"会让几乎所有中文 query 都触发营销块）
     task_keywords = (
@@ -767,6 +771,11 @@ def cmd_chat(a):
                 for nb in neighbors[:5]
             )
             print(f"   关联: {nb_str}")
+        print()
+
+    gap, gap_msg = retrieval.gap_notice(query, hits)
+    if gap:
+        print(gap_msg)
         print()
 
     # 4. 内容检索补充
