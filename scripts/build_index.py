@@ -17,6 +17,7 @@ import bundle as bundle_mod  # noqa: E402
 import content_index as ci  # noqa: E402
 import doctor as doctor_mod  # noqa: E402
 import export as export_mod  # noqa: E402
+import hit_ledger as ledger_mod  # noqa: E402
 import importer as importer_mod  # noqa: E402
 import index_store  # noqa: E402
 import paths  # noqa: E402
@@ -161,6 +162,14 @@ def cmd_pack(a):
         for info in z.infolist():
             print(f"  {info.file_size:8,}  {info.filename}")
     print("> 上传平台后：技能页「重新扫描」→ 沙箱里 agent-index / index 重建索引")
+
+
+def cmd_ledger(a):
+    """命中率账本报表：能力缺口（零命中 query）、技能命中/采纳榜、僵尸技能。"""
+    events = ledger_mod.load_events(limit=a.limit or None)
+    names = {e["name"] for e in index_store.load_index()
+             if e["type"] == "skill" and not e.get("excluded")}
+    print(ledger_mod.ledger_report(events, skill_names=names))
 
 
 def cmd_roots(a):
@@ -399,6 +408,9 @@ def cmd_search(a):
         print(f"\n[skill-gateway] 检索: 命中 [{best_hit}]")
     print("> 留痕须原样附在答复末尾；答复简短直接，不复述检索过程。")
 
+    ledger_mod.record_event("search", a.query, hits,
+                            extra={"agent": scanner_mod.available_list_agent()})
+
     # 主动决策增量更新与自省晋升。检索结果不算"使用"（不传 hits），
     # 只有用户显式 detail / 采纳才计频晋升。
     hook_res = proactive.proactive_post_hook("search", {"query": a.query})
@@ -432,6 +444,7 @@ def cmd_detail(a):
             print("⚠ 平台云技能：无本地 SKILL.md（清单未提供 path）。"
                   "以下仅为索引描述摘要；全文请在平台技能库查看，或让平台落盘后重建索引。")
         print(e["description"])
+    ledger_mod.record_event("adopt", e["name"], [], {"skill": e["name"]})
     # detail = 用户显式取用某技能全文，是可信的"真实使用"信号，计入频次晋升
     hook_res = proactive.proactive_post_hook(
         "detail", {"query": a.name, "skills": [e["name"]]}
@@ -820,6 +833,9 @@ def cmd_chat(a):
             "\n> 留痕须原样附在答复末尾；答复简短直接，不复述检索过程。"
         )
 
+    ledger_mod.record_event("chat", query, hits,
+                            extra={"agent": scanner_mod.available_list_agent()})
+
     # 主动决策增量更新与自省晋升。问答命中不算"使用"（不传 hits），
     # 只有用户显式 detail / 采纳才计频晋升。
     hook_res = proactive.proactive_post_hook("chat", {"query": query})
@@ -922,6 +938,10 @@ def cmd_pipeline(a):
         print(json.dumps(clean_pipe, ensure_ascii=False, indent=2))
     else:
         print(pipeline_mod.format_pipeline_markdown(pipe))
+
+    ledger_mod.record_event("pipeline", a.query,
+                            [{"name": n} for n in pipe.get("skills", [])],
+                            extra={"agent": scanner_mod.available_list_agent()})
 
     # 主动决策增量更新与自省晋升。
     # 注意：pipeline 的阶段选型是**编排器内部填坑**，不是用户的真实使用——
@@ -1426,6 +1446,15 @@ COMMANDS = [
         "help": "查看 Self-Improving 活跃记忆库 (output/memory.md) 与历史纠偏审计日志 (corrections.md)",
         "handler": "cmd_memory",
         "args": [],
+    },
+    {
+        "name": "ledger",
+        "usage": "ledger [--limit N]",
+        "help": "命中率账本报表：零命中 query（能力缺口工单）、技能命中/采纳榜、僵尸技能",
+        "handler": "cmd_ledger",
+        "args": [
+            (("--limit",), {"type": int, "default": 0, "help": "只统计最近 N 条事件（默认全部）"}),
+        ],
     },
     {
         "name": "pack",
