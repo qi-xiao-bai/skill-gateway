@@ -112,6 +112,7 @@ def cmd_agent_index(a):
     print(f"  当前 Agent 绑定 {bound} 项")
     print(f"  {ci_note}（总耗时 {time.time() - t0:.1f}s）")
     print("> 口径：chat/search/pipeline 默认=平台可用；--agent 收窄当前 Agent；--all 全量审计")
+    print("> 验证建议：list --agent（核对绑定集，不产生检索脚注）；如用 search 验证，答复中须说明脚注来源")
     print(f"  dashboard -> {out_path('skill-dashboard.html')}")
 
 
@@ -328,11 +329,12 @@ def cmd_search(a):
     by_id = retrieval.build_id_map(entries)
     all_related = []
 
-    for score, e, overlap in hits:
+    for hi, (score, e, overlap) in enumerate(hits):
         pinned_tag = " [★常用置顶]" if e.get("is_pinned") else ""
         cp_tag = "".join(f" [{e[k]}]" for k in ("category", "platform") if e.get(k))
+        weak_tag = " （单证据词命中，弱关联）" if (hi == 0 and len(overlap) == 1) else ""
         print(
-            f"{score:6.1f}  ({e['type']}) {e['name']}{pinned_tag}{cp_tag}: {e['description'][:100]}"
+            f"{score:6.1f}  ({e['type']}) {e['name']}{pinned_tag}{cp_tag}{weak_tag}: {e['description'][:100]}"
         )
         if e.get("triggers"):
             print(f"        触发: {'、'.join(e['triggers'])}")
@@ -735,6 +737,7 @@ def cmd_chat(a):
 
     related_names = set()
     for rank, (score, e, overlap) in enumerate(hits, 1):
+        weak_tag = " ⚠单证据词命中（弱关联，可能是能力缺口）" if (rank == 1 and len(overlap) == 1) else ""
         eid = retrieval.entry_id(e)
         neighbors = retrieval.get_1hop_neighbors(edges, eid, by_id)
         if not neighbors:
@@ -747,7 +750,7 @@ def cmd_chat(a):
         trig = "、".join((e.get("triggers") or [])[:5])
         pinned_tag = " ★ [常用置顶]" if e.get("is_pinned") else ""
         cp_tag = "".join(f" [{e[k]}]" for k in ("category", "platform") if e.get(k))
-        print(f"{rank}. **{e['name']}**{pinned_tag}{cp_tag} [{score:.1f}] — {desc_short}")
+        print(f"{rank}. **{e['name']}**{pinned_tag}{cp_tag} [{score:.1f}]{weak_tag} — {desc_short}")
         if trig:
             print(f"   触发: {trig}")
         sim = e.get("similar_skills")
