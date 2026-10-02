@@ -1120,6 +1120,8 @@ def cmd_clean(a):
     名单制：只删已知运行时产物（LEGACY_OUTPUT_FILES 文件名），清单之外的文件
     （README.md、.gitkeep、以及任何后续新增的源数据文件）一律不动。"""
 
+    import shutil
+
     cleaned = []
     # 1. 清理根目录下的遗留产物
     for fname in paths.LEGACY_OUTPUT_FILES:
@@ -1135,8 +1137,9 @@ def cmd_clean(a):
     out_d = paths.out_dir()
     if os.path.isdir(out_d):
         for fname in os.listdir(out_d):
-            if fname not in paths.LEGACY_OUTPUT_FILES:
-                continue  # 非产物名单 = 源数据，绝不清理
+            is_tmp = fname.startswith(".idx-tmp-") or fname.endswith(".tmp")
+            if fname not in paths.LEGACY_OUTPUT_FILES and not is_tmp:
+                continue  # 非产物名单 = 源数据，绝不清理；.tmp 仅清原子写崩溃残留
             fp = os.path.join(out_d, fname)
             if os.path.isfile(fp):
                 try:
@@ -1145,9 +1148,16 @@ def cmd_clean(a):
                 except Exception as ex:
                     print(f"  删除失败 {fp}: {ex}")
 
-    # 3. 清理 Python 编译缓存
-    import shutil
+    # 2.5 平台桥接易失层（inputs/platform_mirror）：可随时由 bridge 重建
+    mirror = os.path.join(paths.ROOT, "inputs", "platform_mirror")
+    if os.path.isdir(mirror):
+        try:
+            shutil.rmtree(mirror, ignore_errors=True)
+            cleaned.append("inputs/platform_mirror")
+        except Exception:
+            pass
 
+    # 3. 清理 Python 编译缓存
     for root, dirs, _files in os.walk(paths.ROOT):
         for d in ("__pycache__", ".pytest_cache"):
             if d in dirs:

@@ -454,6 +454,8 @@ LEGACY_OUTPUT_FILES = [
     ".proactive_state.json",
     "memory.md",
     "corrections.md",
+    # 命中率账本（检索/采纳事件，本机运行时数据）
+    "hit-ledger.jsonl",
 ]
 
 _MIGRATED = False
