@@ -76,7 +76,33 @@ def cmd_agent_index(a):
     并立即重建索引、dashboard 与内容索引。
     不带清单参数 = 自助模式：直接扫描当前环境已挂载技能（约定根+广域发现）并入
     共享清单——跑完即用，不反问、不解释。平台有导出文件时再走文件导入。"""
+    import shutil as _shutil
+
     t0 = time.time()
+    agent_name = (a.agent or "").strip() or         (os.environ.get("SKILL_GATEWAY_AGENT") or "").strip()
+    list_path = os.path.join(paths.ROOT, "inputs", "available_skills.json")
+    os.makedirs(os.path.dirname(list_path), exist_ok=True)
+
+    # --prune-agent：清除某环境的绑定污染（agents 去名，无人绑定即移出清单），并重建
+    if getattr(a, "prune_agent", ""):
+        victims = a.prune_agent.strip()
+        doc = scanner_mod.available_list_doc() or {"skills": []}
+        kept, removed = [], 0
+        for it in doc.get("skills") or []:
+            ags = [x for x in (it.get("agents") or []) if x != victims]
+            if it.get("agents") and victims in it.get("agents") and not ags:
+                removed += 1
+                continue  # 绑定清空 = 无人挂载，移出权威清单（磁盘扫描照旧兜底 off-list）
+            if ags != it.get("agents"):
+                it["agents"] = ags
+            kept.append(it)
+        index_store.atomic_write(list_path, json.dumps(
+            {**doc, "skills": kept}, ensure_ascii=False, indent=2))
+        entries, _st = index_store.update_index()
+        print(f"[agent-index] 已清除 agents=[{victims}] 的绑定：移除 {removed} 项，保留 {len(kept)} 项")
+        print(f"[agent-index] 索引已重建（当前 {len(entries)} 项）。共享清单: {list_path}")
+        return
+
     if a.source:
         raw = importer_mod.parse_source_raw(a.source)
         if not raw:
@@ -90,15 +116,17 @@ def cmd_agent_index(a):
                 "[agent-index] 当前环境未扫描到任何技能（约定根与广域发现均为空）。"
                 "请提供清单：agent-index <文件|-> [--agent 智能体名]，或用 roots 诊断扫描根。"
             )
-        print(f"[agent-index] 自助模式：已扫描当前环境 {len(raw)} 项技能")
-    agent_name = (a.agent or "").strip() or         (os.environ.get("SKILL_GATEWAY_AGENT") or "").strip() or "default"
-    if (a.agent or "").strip() == "" and agent_name == "default":
+        print(f"[agent-index] 自助模式：已发现 {len(raw)} 项技能")
+        if not os.environ.get("SKILL_GATEWAY_SKILL_DIRS") and not paths.only_dirs():
+            print("[agent-index] ⚠ 未设 SKILL_GATEWAY_SKILL_DIRS：以上为**全机器发现量**，"
+                  "含本环境挂载范围外的技能。要精确圈定本环境挂载集，"
+                  "请设 SKILL_GATEWAY_SKILL_DIRS=<本环境技能目录> 后重跑。")
+    if not agent_name:
+        agent_name = "default"
         print("[agent-index] 未指定 --agent：本环境技能将以 agents=[default] 标注；"
               "建议 --agent <环境名> 便于多环境区分。")
-    agent_name = (a.agent or "").strip()
-    # 多智能体共用同一份清单：永远写通用文件（合并语义，agents 字段标归属），不分文件
-    list_path = os.path.join(paths.ROOT, "inputs", "available_skills.json")
-    os.makedirs(os.path.dirname(list_path), exist_ok=True)
+
+    # 合并语义：agents 并集、未导入条目原样保留（共享清单属于所有智能体环境）
     doc = importer_mod.to_available_list(raw, agent_name, scanner_mod.available_list_doc())
     index_store.atomic_write(list_path, json.dumps(doc, ensure_ascii=False, indent=2))
     t_list = time.time()
@@ -123,7 +151,7 @@ def cmd_agent_index(a):
     off = sum(1 for e in skills if e.get("visibility") == "off-list")
     bound = sum(1 for e in skills if e.get("agent_bound") is True)
     cur = scanner_mod.available_list_agent()
-    print(f"[agent-index] 权威清单已写入: {list_path}（{t_list - t0:.1f}s）")
+    print(f"[agent-index] 共享清单已更新: {list_path}（{t_list - t0:.1f}s）")
     print(f"  当前 Agent: {cur or '（未声明，Agent 维度不生效）'}")
     print(f"  索引重建完成（新增 {len(st.get('added', []))} / 更新 {len(st.get('updated', []))} / 移除 {len(st.get('removed', []))}，{t_idx - t_list:.1f}s）")
     print(f"  平台可用 {ready} ｜ blocked {blocked} ｜ 平台未绑定(off-list) {off}")
@@ -132,6 +160,14 @@ def cmd_agent_index(a):
     print("> 口径：chat/search/pipeline 默认=平台可用；--agent 收窄当前 Agent；--all 全量审计")
     print("> 验证建议：list --agent（核对绑定集，不产生检索脚注）；如用 search 验证，答复中须说明脚注来源")
     print(f"  dashboard -> {out_path('skill-dashboard.html')}")
+
+
+def cmd_ledger(a):
+    """命中率账本报表：能力缺口（零命中 query）、技能命中/采纳榜、僵尸技能。"""
+    events = ledger_mod.load_events(limit=a.limit or None)
+    names = {e["name"] for e in index_store.load_index()
+             if e["type"] == "skill" and not e.get("excluded")}
+    print(ledger_mod.ledger_report(events, skill_names=names))
 
 
 # pack 交付包口径：测试基建/开发文档/运行产物/缓存不上平台
@@ -179,14 +215,6 @@ def cmd_pack(a):
         for info in z.infolist():
             print(f"  {info.file_size:8,}  {info.filename}")
     print("> 上传平台后：技能页「重新扫描」→ 沙箱里 agent-index / index 重建索引")
-
-
-def cmd_ledger(a):
-    """命中率账本报表：能力缺口（零命中 query）、技能命中/采纳榜、僵尸技能。"""
-    events = ledger_mod.load_events(limit=a.limit or None)
-    names = {e["name"] for e in index_store.load_index()
-             if e["type"] == "skill" and not e.get("excluded")}
-    print(ledger_mod.ledger_report(events, skill_names=names))
 
 
 def cmd_roots(a):
@@ -1250,6 +1278,7 @@ COMMANDS = [
             (("--agent",), {"help": "当前智能体名（写入 current_agent，并作为每项默认 agents）"}),
             (("--content",), {"action": "store_true",
                                "help": "同时重建内容索引（默认跳过——首次全量最耗时；未命中自愈会自动补）"}),
+            (("--prune-agent",), {"help": "清除指定智能体的绑定（agents 含该名的条目被移出清单），用于清理误导入"}),
         ],
     },
     {
