@@ -61,9 +61,9 @@ pipeline 处理开发任务时按开发生命周期检索编排。**契约只定
 
 ### 建立 Agent 级索引（网页端三步，一条命令）
 
-1. 平台绑定清单（如 `skill_follow(action="list")` 的返回 JSON）存成文件（或经 stdin 走 `-`）；
-2. 运行 `python scripts/build_index.py agent-index <文件> --agent "<智能体名>"`——自动把清单写成 `inputs/available_skills.json`（顶层 current_agent + 每项 agents），并重建索引、dashboard、内容索引；
-3. 之后 `chat`/`search`/`pipeline` 默认=平台口径；`--agent` 收窄到该智能体绑定集；`list --agent` 查看绑定清单。重复导入幂等，同名条目保留旧 category/platform 标注。
+0. **最简（推荐）**：直接运行 `python scripts/build_index.py agent-index`（不带参数）= 自动扫描当前环境已挂载技能，合并进共享清单并重建索引——**跑完即用，不反问、不解释**。未指定 `--agent` 时以 default 标注。
+1. 平台有导出清单（如 `skill_follow` 的 JSON）时更精确：`python scripts/build_index.py agent-index <文件> --agent "<智能体名>"`（合并导入：agents 并集，不动其他环境条目）；
+2. 之后 `chat`/`search`/`pipeline` 默认=平台口径；`--agent` 收窄到该智能体绑定集；`list --agent` 查看绑定清单。重复导入幂等。
 
 ---
 

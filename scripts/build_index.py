@@ -72,21 +72,34 @@ def cmd_index(a):
 
 
 def cmd_agent_index(a):
-    """建立 Agent 级索引：把平台/Agent 绑定清单写成权威可用清单（inputs/available_skills.json）
-    并立即重建索引、dashboard 与内容索引——一步到位，网页端 skill_follow 导出可直接喂进来。"""
-    raw = importer_mod.parse_source_raw(a.source)
-    if not raw:
-        _miss(
-            "[agent-index] 没解析出技能项。支持 JSON（list 或 {skills:[...]}，如 skill_follow 的返回）/ 每行 `name: 描述`"
-        )
+    """建立 Agent 级索引：把清单合并进权威可用清单（inputs/available_skills.json）
+    并立即重建索引、dashboard 与内容索引。
+    不带清单参数 = 自助模式：直接扫描当前环境已挂载技能（约定根+广域发现）并入
+    共享清单——跑完即用，不反问、不解释。平台有导出文件时再走文件导入。"""
     t0 = time.time()
+    if a.source:
+        raw = importer_mod.parse_source_raw(a.source)
+        if not raw:
+            _miss(
+                "[agent-index] 没解析出技能项。支持 JSON（list 或 {skills:[...]}，如 skill_follow 的返回）/ 每行 `name: 描述`"
+            )
+    else:
+        raw = scanner_mod.scan_skills(ignore_list=True)
+        if not raw:
+            _miss(
+                "[agent-index] 当前环境未扫描到任何技能（约定根与广域发现均为空）。"
+                "请提供清单：agent-index <文件|-> [--agent 智能体名]，或用 roots 诊断扫描根。"
+            )
+        print(f"[agent-index] 自助模式：已扫描当前环境 {len(raw)} 项技能")
+    agent_name = (a.agent or "").strip() or         (os.environ.get("SKILL_GATEWAY_AGENT") or "").strip() or "default"
+    if (a.agent or "").strip() == "" and agent_name == "default":
+        print("[agent-index] 未指定 --agent：本环境技能将以 agents=[default] 标注；"
+              "建议 --agent <环境名> 便于多环境区分。")
     agent_name = (a.agent or "").strip()
-    # 多环境共用技能包：--agent 指定时写独立清单文件，不顶掉其他环境的口径
-    list_path = os.path.join(
-        paths.ROOT, "inputs",
-        f"available_skills.{agent_name}.json" if agent_name else "available_skills.json")
+    # 多智能体共用同一份清单：永远写通用文件（合并语义，agents 字段标归属），不分文件
+    list_path = os.path.join(paths.ROOT, "inputs", "available_skills.json")
     os.makedirs(os.path.dirname(list_path), exist_ok=True)
-    doc = importer_mod.to_available_list(raw, a.agent, scanner_mod.available_list_doc())
+    doc = importer_mod.to_available_list(raw, agent_name, scanner_mod.available_list_doc())
     index_store.atomic_write(list_path, json.dumps(doc, ensure_ascii=False, indent=2))
     t_list = time.time()
     entries, st = index_store.update_index()
@@ -1228,11 +1241,12 @@ COMMANDS = [
     },
     {
         "name": "agent-index",
-        "usage": "agent-index <文件|-> [--agent <智能体名>]",
-        "help": "建立 Agent 级索引：把平台绑定清单（如 skill_follow 导出）写成权威可用清单并重建索引",
+        "usage": "agent-index [<文件|->] [--agent <智能体名>] [--content]",
+        "help": "建立 Agent 级索引：不带清单 = 自动扫描当前环境已挂载技能并入共享清单；带文件则合并导入",
         "handler": "cmd_agent_index",
         "args": [
-            (("source",), {"help": "清单来源：文件路径 / - 读 stdin / 直接文本"}),
+            (("source",), {"nargs": "?", "default": "",
+                            "help": "清单来源：文件路径 / - 读 stdin / 直接文本；省略 = 自动扫描当前环境"}),
             (("--agent",), {"help": "当前智能体名（写入 current_agent，并作为每项默认 agents）"}),
             (("--content",), {"action": "store_true",
                                "help": "同时重建内容索引（默认跳过——首次全量最耗时；未命中自愈会自动补）"}),
