@@ -57,7 +57,7 @@ pipeline 处理开发任务时按开发生命周期检索编排。**契约只定
 - **命中率账本**：`search`/`chat`/`pipeline`/`detail` 自动旁路记录事件（`output/hit-ledger.jsonl`，本机数据、不进交付包；`SKILL_GATEWAY_LEDGER=0` 关闭）。`ledger` 命令出治理报表：零命中 query（能力缺口工单）、技能命中/采纳榜、僵尸技能。
 - **验证规范**：建索引后的核对用 `list --agent`（list 不产生检索脚注）；如需 `search` 验证，答复中必须注明"脚注来自验证检索，非调度交付"——验证脚注混进交付答复会造成"建索引命中了技能"的错觉。
 - 兼容入口：`skill_profile.json` 的 `authoritative_skills`（仅名字数组）在没有 `available_skills.json` 时自动充当清单来源；要 agents/category/platform 完整口径仍用 `agent-index` 生成。磁盘上与绑定技能**业务重叠**的变体（描述/触发词真实重叠达图谱 overlap 阈值，名字前缀仅作线索）保持可用。
-- **Agent 维度（非默认，平台是默认口径）**：清单顶层 `current_agent`（或环境变量 `SKILL_GATEWAY_AGENT`）声明当前智能体，每项可选 `agents` 数组声明被哪些智能体绑定，条目据此算出 `agent_bound`。加 `--agent` 才收窄到当前智能体绑定的技能；不加 = 平台口径。清单完全没写 `agents` 时 Agent 维度不生效（全部视为已绑定）。
+- **Agent 维度（非默认，平台是默认口径）**：多智能体环境**共用同一份清单**——每项的 `agents` 数组标注被哪些智能体绑定（就是"可见性多写几个字"），清单顶层 `current_agent` 或环境变量 `SKILL_GATEWAY_AGENT` 声明当前智能体，条目据此算出 `agent_bound`。加 `--agent` 才收窄；不加 = 平台口径。`agent-index` 导入是**合并**语义：agents 取并集、未导入条目原样保留，绝不裁剪其他环境的绑定。
 
 ### 建立 Agent 级索引（网页端三步，一条命令）
 

@@ -80,7 +80,11 @@ def cmd_agent_index(a):
             "[agent-index] 没解析出技能项。支持 JSON（list 或 {skills:[...]}，如 skill_follow 的返回）/ 每行 `name: 描述`"
         )
     t0 = time.time()
-    list_path = os.path.join(paths.ROOT, "inputs", "available_skills.json")
+    agent_name = (a.agent or "").strip()
+    # 多环境共用技能包：--agent 指定时写独立清单文件，不顶掉其他环境的口径
+    list_path = os.path.join(
+        paths.ROOT, "inputs",
+        f"available_skills.{agent_name}.json" if agent_name else "available_skills.json")
     os.makedirs(os.path.dirname(list_path), exist_ok=True)
     doc = importer_mod.to_available_list(raw, a.agent, scanner_mod.available_list_doc())
     index_store.atomic_write(list_path, json.dumps(doc, ensure_ascii=False, indent=2))

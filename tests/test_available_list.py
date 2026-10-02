@@ -162,5 +162,20 @@ class AvailableListTests(unittest.TestCase):
         self.assertEqual(raw2[0]["category"], "c")
 
 
+    def test_agent_index_merges_shared_list(self):
+        """共享清单合并：导入不清其他环境条目，agents 取并集。"""
+        raw = [{"name": "antigravity-skill", "description": "antigravity 专属",
+                "agents": ["antigravity"]}]
+        doc = importer.to_available_list(raw, "antigravity", old_doc={"skills": [
+            {"name": "zcode-one", "description": "zcode 专属", "agents": ["zcode"]},
+            {"name": "shared-skill", "description": "双方共用", "agents": ["zcode"]},
+        ]})
+        by = {it["name"]: it for it in doc["skills"]}
+        self.assertEqual(by["zcode-one"]["agents"], ["zcode"])       # 未导入条目原样保留
+        self.assertEqual(by["antigravity-skill"]["agents"], ["antigravity"])
+        self.assertEqual(by["shared-skill"]["agents"], ["zcode"])  # 未导入的条目绑定保持原样
+        self.assertEqual(doc["current_agent"], "antigravity")
+
+
 if __name__ == "__main__":
     unittest.main()

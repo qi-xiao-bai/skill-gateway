@@ -114,9 +114,9 @@ AVAILABLE_LIST_FILES = ("available_skills.json", "platform_skills.json")
 _BLOCKED_STATUS = {"blocked", "disabled", "unavailable", "off", "停用", "不可用", "已停用"}
 
 
-def available_list_file():
+def available_list_file(agent=None):
     """权威可用清单路径：inputs/available_skills.json（兼容 platform_skills.json）。
-    存在即视为"本智能体能用什么技能"的完整定义，常规磁盘扫描全部让位。"""
+    多智能体环境**共用同一份清单**——技能归属用每项的 agents 数组标注，不分文件。"""
     for nm in AVAILABLE_LIST_FILES:
         p = os.path.join(ROOT, "inputs", nm)
         if os.path.isfile(p):

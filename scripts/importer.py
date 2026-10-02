@@ -160,12 +160,16 @@ def to_available_list(items, agent_name=None, old_doc=None):
     - 每项保留 name/description/triggers/path/status/category/platform 原值；
     - 幂等：新清单缺某字段（category/platform/description 等）时用旧清单同名条目的值补位；新值优先。
     """
-    old_map = {}
+    old_map, old_order = {}, []
     if isinstance(old_doc, dict):
         for it in old_doc.get("skills") or []:
             if isinstance(it, dict) and it.get("name"):
-                old_map[str(it["name"]).strip().lower()] = it
+                k = str(it["name"]).strip().lower()
+                if k not in old_map:
+                    old_order.append(k)
+                old_map[k] = it
     skills = []
+    imported = set()
     for it in items:
         if isinstance(it, str):
             it = _line_to_entry(it) or {}
@@ -184,14 +188,19 @@ def to_available_list(items, agent_name=None, old_doc=None):
                 v = old.get(k)
             if v not in (None, ""):
                 rec[k] = v
-        agents = it.get("agents")
+        agents = list(it.get("agents") or [])
         if not agents:
-            agents = old.get("agents")
-        if not agents and agent_name:
-            agents = [agent_name]
+            agents = list(old.get("agents") or [])
+        if agent_name and agent_name not in agents:
+            agents.append(agent_name)  # 并集：合并导入，不清其他环境的绑定
         if agents:
             rec["agents"] = agents
+        imported.add(name.lower())
         skills.append(rec)
+    # 未被本次导入的旧条目原样保留——共享清单属于所有智能体环境，合并不裁剪
+    for k in old_order:
+        if k not in imported:
+            skills.append(old_map[k])
     doc = {}
     if agent_name:
         doc["current_agent"] = agent_name
