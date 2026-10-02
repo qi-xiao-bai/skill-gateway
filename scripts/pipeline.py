@@ -6,11 +6,28 @@
 #                         数据决定：① 任务检索命中的种子技能 ② 子图内 depends_on 边的拓扑
 #                         分层 ③ 技能自身的描述与触发词。图谱里没有依赖关系时，诚实输出
 #                         "并行候选"，绝不给任意任务硬套研发流水线。
+import re
+
 import index_store
 import retrieval
 from paths import get_pinned_skills, get_user_directives
 
 SEED_TOP = 6  # 任务检索取几个种子技能
+# 开发任务生命周期契约（SKILL.md 阶段契约的代码化）：阶段固定、阶段→技能检索动态决定
+LIFECYCLE_STAGES = (
+    ("拆解规划", "需求分析 拆解规划 requirement analysis planning breakdown"),
+    ("资料核查", "资料核查 文档查询 documentation lookup reference docs"),
+    ("编码实现", "编码 开发实现 implementation coding development develop"),
+    ("测试验证", "测试验证 testing validation test tests"),
+    ("修错排查", "修错排查 debugging debug troubleshoot bug"),
+    ("重构治理", "重构 治理 清理 refactor cleanup deslop"),
+    ("审查把关", "代码审查 评审把关 code review"),
+    ("安全卡点", "安全审查 security review"),
+    ("归档交付", "归档 交付 文档 documentation delivery doc archive"),
+)
+DEV_TASK_KEYWORDS = ("开发", "实现", "修复", "改造", "重构", "部署", "新增", "上线",
+                     "排查", "审批联动", "bug", "fix", "develop", "implement",
+                     "deploy", "refactor")
 EXPAND_TOP = 9  # 子图节点上限（种子 + depends_on 指向的支撑技能）
 MAX_STAGE_SKILLS = 3  # 单阶段并行技能上限（超出按相关度截断）
 
@@ -108,6 +125,81 @@ def _parallel_stage(i, members, evidence):
     }
 
 
+# 生命周期流程词汇表（判定"流程技能 vs 领域技能"用；只含流程词，零技能名硬编码）
+_LIFECYCLE_VOCAB = {"plan", "planning", "analysis", "requirement", "requirements",
+                    "doc", "docs", "documentation", "coding", "code", "develop",
+                    "development", "dev", "implementation", "implement", "test",
+                    "testing", "tests", "validation", "debug", "debugging",
+                    "troubleshoot", "refactor", "cleanup", "clean", "deslop",
+                    "review", "security", "audit", "archive", "delivery", "slop",
+                    "cleaner", "diagnose", "feature", "tdd", "interview",
+                    "workflow", "process", "gate", "lookup", "reference", "guide",
+                    "ai", "optimizer", "optimize", "optimization", "research", "deep"}
+
+
+def _domain_locked(name, task_terms):
+    """名字里**存在**任务 query 之外领域词元的技能 = 领域锁定，不进生命周期阶段
+    （salesforce-develop 混着流程词 develop 也没用——salesforce 这个领域词元在
+    贪吃蛇任务里锁死它；OPP 任务 query 本身含 salesforce 则放行）。
+    名字词元全部属于流程词汇表 → 流程技能，放行。"""
+    toks = {t for t in re.split(r"[^a-z0-9]+", (name or "").lower()) if len(t) >= 2}
+    if not toks:
+        return False
+    return any(t not in _LIFECYCLE_VOCAB and t not in task_terms for t in toks)
+
+
+def _is_dev_task(query):
+    ql = (query or "").lower()
+    return any(k in ql for k in DEV_TASK_KEYWORDS)
+
+
+def _lifecycle_stages(query, entries, domain_seeds, evidence):
+    """开发任务生命周期编排：阶段固定为开发生命周期，阶段→技能由检索动态决定；
+    领域种子并入"编码实现"阶段作领域上下文；检索无匹配的阶段声明"通用能力承接"。
+    返回 (stages, notes, n_general)。仅当 ≥3 个阶段检索到技能才启用（否则说明
+    绑定集缺生命周期技能，硬排会变成一排空壳）。"""
+    stages, notes, used = [], [], set()
+    domain_members = []
+    for e in domain_seeds:
+        if e["name"].lower() not in used:
+            domain_members.append(e)
+            used.add(e["name"].lower())
+    n_general = 0
+    task_terms = retrieval.terms(query)
+    for stage_name, stage_query in LIFECYCLE_STAGES:
+        members = []
+        if stage_name == "编码实现":
+            members = list(domain_members)
+        hits = retrieval.search(entries, stage_query, top=6)
+        for _s, e, m in hits:
+            if e["name"].lower() in used or len(members) >= MAX_STAGE_SKILLS:
+                continue
+            if _domain_locked(e["name"], task_terms):
+                continue  # 领域锁定：名字带任务外领域词的技能不进流程阶段
+            used.add(e["name"].lower())
+            members.append(e)
+            if stage_name == "编码实现" and e not in domain_members:
+                evidence.setdefault(e["name"].lower(), m)
+        if not members:
+            n_general += 1
+            notes.append(f"阶段「{stage_name}」检索无匹配技能 → 通用能力承接。")
+            continue
+        names = [m["name"] for m in members]
+        stages.append({
+            "index": len(stages) + 1,
+            "stage_title": f"阶段 {len(stages) + 1}：{stage_name}（{'、'.join(names)}）",
+            "skills": members,
+            "skill_names": names,
+            "parallel": len(members) > 1,
+            "input": "任务原文" + ("与上一阶段产出" if len(stages) else "与领域检索证据"),
+            "output": f"{stage_name}阶段的交付产物",
+            "handoff": "产出交接下一阶段（生命周期时序，非图谱边推导）",
+            "evidence": {m_["name"]: evidence.get(m_["name"].lower(), []) for m_ in members},
+            "lifecycle": stage_name,
+        })
+    return stages, notes, n_general
+
+
 def build_pipeline(query, entries=None, edges=None, seed_top=SEED_TOP, _retried=False,
                    include_off_list=False, agent_only=False):
     """图谱驱动编排：
@@ -155,6 +247,22 @@ def build_pipeline(query, entries=None, edges=None, seed_top=SEED_TOP, _retried=
                 seed_top=seed_top, _retried=True,
                 include_off_list=include_off_list, agent_only=agent_only,
             )
+
+    # 开发任务生命周期契约（代码化）：检测到开发任务且绑定集能支撑 ≥3 个阶段时，
+    # 按生命周期编排，缺口阶段声明通用能力承接——开发任务不再只命中一个技能
+    if _is_dev_task(query):
+        lc_stages, lc_notes, n_general = _lifecycle_stages(
+            query, entries, seeds, dict(evidence))
+        if len(lc_stages) >= 3:
+            return {
+                "task": query,
+                "mode": "lifecycle",
+                "basis": (f"开发任务生命周期契约映射 {len(lc_stages)} 阶段"
+                          f"（通用承接 {n_general} 阶段）"),
+                "stages": lc_stages,
+                "skills": [n for st_ in lc_stages for n in st_["skill_names"]],
+                "notes": lc_notes + twin_notes,
+            }
 
     if not seeds:
         return {
@@ -367,6 +475,12 @@ def footnote_text(pipe):
             f"[skill-gateway] 并行候选编排: {chain} | 图谱无依赖边，不伪造流水线 | "
             "由执行 Agent 甄别采纳"
         )
+    if pipe["mode"] == "lifecycle":
+        chain = " → ".join(
+            f"[{st['skill_names'][0] if st['skill_names'] else '通用能力承接'}]"
+            for st in pipe["stages"])
+        return (f"[skill-gateway] 开发生命周期编排: {chain} | "
+                f"生命周期契约 {len(pipe['stages'])} 阶段 | 缺口阶段已声明通用承接")
     chain = " → ".join(f"[{'、'.join(st['skill_names'])}]" for st in pipe["stages"])
     return (
         f"[skill-gateway] 技能串联编排: {chain} | 图谱拓扑 {len(pipe['stages'])} 阶段"
