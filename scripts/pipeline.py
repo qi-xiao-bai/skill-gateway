@@ -126,6 +126,18 @@ def _parallel_stage(i, members, evidence):
 
 
 # 生命周期流程词汇表（判定"流程技能 vs 领域技能"用；只含流程词，零技能名硬编码）
+# 每阶段的独有语义保留词（security 必归安全卡点、review 必归审查把关…；非技能名）
+_STAGE_RESERVED_TOKENS = {
+    "拆解规划": {"plan", "planning"},
+    "编码实现": {"dev", "develop", "feature"},
+    "测试验证": {"test", "testing", "tdd"},
+    "修错排查": {"debug", "diagnose", "bug"},
+    "重构治理": {"refactor", "cleanup", "slop", "optimizer", "optimize"},
+    "审查把关": {"review"},
+    "安全卡点": {"security", "vulnerability", "owasp"},
+    "归档交付": {"doc", "docs", "archive"},
+}
+
 _LIFECYCLE_VOCAB = {"plan", "planning", "analysis", "requirement", "requirements",
                     "doc", "docs", "documentation", "coding", "code", "develop",
                     "development", "dev", "implementation", "implement", "test",
@@ -182,6 +194,18 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence):
         nt = retrieval.terms(e.get("name", ""))
         if not nt:
             continue
+        name_tokens = {t for t in re.split(r"[^a-z0-9]+", e.get("name", "").lower())
+                       if len(t) >= 2}
+        # 1) 保留词优先：名字命中某阶段独有语义词（security→安全卡点、review→审查把关…）
+        reserved_hits = [(name, max((len(t) for t in name_tokens & toks), default=0))
+                         for name, toks in _STAGE_RESERVED_TOKENS.items()
+                         if name_tokens & toks]
+        if reserved_hits:
+            reserved_hits.sort(key=lambda x: -x[1])  # 最长命中词元 = 最专指的归属
+            claim[low] = reserved_hits[0][0]
+            used.add(low)
+            continue
+        # 2) 其余按 IDF 加权的名称亲和归入最优阶段
         best = None
         for stage_name, st_terms in stage_terms_map.items():
             hit_terms = nt & st_terms
