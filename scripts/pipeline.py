@@ -22,7 +22,7 @@ LIFECYCLE_STAGES = (
     ("修错排查", "修错排查 debugging debug troubleshoot bug"),
     ("重构治理", "重构 治理 清理 refactor cleanup deslop"),
     ("审查把关", "代码审查 评审把关 code review"),
-    ("安全卡点", "安全审查 security review"),
+    ("安全卡点", "安全审查 安全漏洞 卡点 owasp vulnerability"),
     ("归档交付", "归档 交付 文档 documentation delivery doc archive"),
 )
 DEV_TASK_KEYWORDS = ("开发", "实现", "修复", "改造", "重构", "部署", "新增", "上线",
@@ -166,23 +166,60 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence):
             used.add(e["name"].lower())
     n_general = 0
     task_terms = retrieval.terms(query)
+    weights = retrieval.idf(entries)
+    stage_terms_map = {name: retrieval.terms(q) for name, q in LIFECYCLE_STAGES}
+
+    # 名称亲和全局预分配：名字与阶段查询有交集的技能，归入其 IDF 加权最优阶段
+    # （security-review 的 security 是稀有词 → 必归"安全卡点"，不被"审查把关"的
+    #   review 抢走；code-review 的 code+review 双词 → 稳归"审查把关"）
+    claim = {}
+    for e in entries:
+        low = e.get("name", "").lower()
+        if low in used or e.get("excluded") or e.get("name") == "skill-gateway":
+            continue
+        if _domain_locked(e.get("name", ""), task_terms):
+            continue
+        nt = retrieval.terms(e.get("name", ""))
+        if not nt:
+            continue
+        best = None
+        for stage_name, st_terms in stage_terms_map.items():
+            hit_terms = nt & st_terms
+            if not hit_terms:
+                continue
+            score = sum(weights.get(t, 0.0) for t in hit_terms)
+            if best is None or score > best[1] + 1e-9:
+                best = (stage_name, score)
+        if best:
+            claim[low] = best[0]
+            used.add(low)
+
+    stage_members = {name: [] for name, _q in LIFECYCLE_STAGES}
+    for e in domain_seeds:
+        stage_members["编码实现"].append(e)
+    for low, stage_name in claim.items():
+        e = next(x for x in entries if x.get("name", "").lower() == low)
+        stage_members[stage_name].append(e)
     for stage_name, stage_query in LIFECYCLE_STAGES:
-        members = []
-        if stage_name == "编码实现":
-            members = list(domain_members)
-        hits = retrieval.search(entries, stage_query, top=6)
+        if stage_members[stage_name]:
+            continue
+        hits = retrieval.search(entries, stage_query, top=3)
         for _s, e, m in hits:
-            if e["name"].lower() in used or len(members) >= MAX_STAGE_SKILLS:
+            low = e["name"].lower()
+            if low in used or len(stage_members[stage_name]) >= MAX_STAGE_SKILLS:
                 continue
             if _domain_locked(e["name"], task_terms):
-                continue  # 领域锁定：名字带任务外领域词的技能不进流程阶段
-            used.add(e["name"].lower())
-            members.append(e)
-            if stage_name == "编码实现" and e not in domain_members:
-                evidence.setdefault(e["name"].lower(), m)
-        if not members:
+                continue
+            used.add(low)
+            evidence.setdefault(low, m)
+            stage_members[stage_name].append(e)
+        if not stage_members[stage_name]:
             n_general += 1
             notes.append(f"阶段「{stage_name}」检索无匹配技能 → 通用能力承接。")
+
+    for stage_name, _q in LIFECYCLE_STAGES:
+        members = stage_members[stage_name]
+        if not members:
             continue
         names = [m["name"] for m in members]
         stages.append({
