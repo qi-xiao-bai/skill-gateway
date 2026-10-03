@@ -113,20 +113,16 @@ class MetaConsistencyTests(unittest.TestCase):
         import re as _re
         tpl = os.path.join(SCRIPTS, "..", "templates", "dashboard_template.html")
         src = open(tpl, encoding="utf-8").read()
-        # buildPlatformTree 和节点过滤必须调 _platOf
-        tree_def = _re.search(r'function buildPlatformTree.*?
-}', src, _re.S)
+        # buildPlatformTree 必须调 _platOf
+        tree_def = _re.search(r"function buildPlatformTree.*?\n\}", src, _re.S)
         assert tree_def, "buildPlatformTree not found"
         self.assertIn("_platOf(d)", tree_def.group(0),
                       "buildPlatformTree 必须调 _platOf 做归属，不得内联")
-        # _platOf 定义外的 d.platform || 归属链（排除 _platOf 本体和 CSS）
-        platof_def = _re.search(r'function _platOf.*?
-}', src, _re.S)
+        # _platOf 定义外的归属判定模式（排除 _platOf 本体和 CSS）
+        platof_def = _re.search(r"function _platOf.*?\n\}", src, _re.S)
         rest = src.replace(platof_def.group(0), "") if platof_def else src
-        # 只查归属判定模式（d.platform || / .agents[0] || __unlabeled__），排除展示层
-        inline = [l for l in rest.split("
-")
-                  if _re.search(r'd\.platform\s*\|\|.*agents.*\|\|.*unlabeled', l)]
+        inline = [l for l in rest.split("\n")
+                  if _re.search(r"d\\.platform\\s*\\|\\|.*agents.*\\|\\|.*unlabeled", l)]
         self.assertEqual(inline, [],
                         f"归属判定内联残留: {inline}——必须走 _platOf()")
 
