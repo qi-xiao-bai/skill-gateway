@@ -173,7 +173,6 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence, prefs=None):
             continue
         if _domain_locked(e.get("name", ""), task_terms):
             continue
-                       if len(t) >= 2}
         nt = retrieval.terms(e.get("name", ""))
         best = None
         for stage_name, st_terms in stage_terms_map.items():
