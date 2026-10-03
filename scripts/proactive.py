@@ -5,7 +5,6 @@
 import hashlib
 import json
 import os
-import re
 import time
 
 import index_store

@@ -173,7 +173,6 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence, prefs=None):
             continue
         if _domain_locked(e.get("name", ""), task_terms):
             continue
-        name_tokens = {t for t in re.split(r"[^a-z0-9]+", e.get("name", "").lower())
                        if len(t) >= 2}
         nt = retrieval.terms(e.get("name", ""))
         best = None
@@ -456,7 +455,6 @@ def build_pipeline(query, entries=None, edges=None, seed_top=SEED_TOP, _retried=
 def _mermaid(pipe):
     lines = ["flowchart LR"]
     for st in pipe["stages"]:
-        names = "、".join(st["skill_names"])[:40]
         lines.append(f'    subgraph S{st["index"]}["{st["stage_title"].split("：", 1)[-1][:24]}"]')
         for j, m in enumerate(st["skills"], 1):
             lines.append(f'      n{st["index"]}_{j}["{m["name"]}"]')
