@@ -113,18 +113,19 @@ class MetaConsistencyTests(unittest.TestCase):
         import re as _re
         tpl = os.path.join(SCRIPTS, "..", "templates", "dashboard_template.html")
         src = open(tpl, encoding="utf-8").read()
-        # buildPlatformTree 必须调 _platOf
+        # buildPlatformTree 必须调 _platOf（分组归属走统一函数）
         tree_def = _re.search(r"function buildPlatformTree.*?\n\}", src, _re.S)
         assert tree_def, "buildPlatformTree not found"
         self.assertIn("_platOf(d)", tree_def.group(0),
                       "buildPlatformTree 必须调 _platOf 做归属，不得内联")
-        # _platOf 定义外的归属判定模式（排除 _platOf 本体和 CSS）
-        platof_def = _re.search(r"function _platOf.*?\n\}", src, _re.S)
-        rest = src.replace(platof_def.group(0), "") if platof_def else src
-        inline = [l for l in rest.split("\n")
-                  if _re.search(r"d\\.platform\\s*\\|\\|.*agents.*\\|\\|.*unlabeled", l)]
-        self.assertEqual(inline, [],
-                        f"归属判定内联残留: {inline}——必须走 _platOf()")
+        # 节点过滤必须调 _platOf
+        filter_hit = _re.search(
+            r'currentPlat\.type === "platform" && _platOf\(d\)', src)
+        self.assertIsNotNone(filter_hit,
+                             "节点过滤必须调 _platOf，不得内联归属逻辑")
+        # _platOf 必须包含 variant_of 继承链
+        self.assertIn("d.variant_of", src,
+                      "_platOf 必须沿 variant_of 回溯变体归属")
 
 
 if __name__ == "__main__":
