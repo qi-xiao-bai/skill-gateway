@@ -127,19 +127,6 @@ def _parallel_stage(i, members, evidence):
 
 
 # 生命周期流程词汇表（判定"流程技能 vs 领域技能"用；只含流程词，零技能名硬编码）
-# 每阶段的独有语义保留词（security 必归安全卡点、review 必归审查把关…；非技能名）
-_STAGE_RESERVED_TOKENS = {
-    "拆解规划": {"plan", "planning"},
-    "编码实现": {"dev", "develop", "feature"},
-    "测试验证": {"test", "testing", "tdd"},
-    "修错排查": {"debug", "diagnose", "bug"},
-    "重构治理": {"refactor", "optimizer", "optimize"},
-    "清理瘦身": {"slop", "cleaner", "cleanup", "deslop"},
-    "审查把关": {"review"},
-    "安全卡点": {"security", "vulnerability", "owasp"},
-    "归档交付": {"doc", "docs", "archive"},
-}
-
 _LIFECYCLE_VOCAB = {"plan", "planning", "analysis", "requirement", "requirements",
                     "doc", "docs", "documentation", "coding", "code", "develop",
                     "development", "dev", "implementation", "implement", "test",
@@ -196,13 +183,6 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence, prefs=None):
             continue
         name_tokens = {t for t in re.split(r"[^a-z0-9]+", e.get("name", "").lower())
                        if len(t) >= 2}
-        reserved_stages = [name for name, toks in _STAGE_RESERVED_TOKENS.items()
-                           if name_tokens & toks]
-        if reserved_stages:
-            for stage_name in reserved_stages:
-                claim_pool.setdefault(stage_name, set()).add(low)
-            used.add(low)
-            continue
         nt = retrieval.terms(e.get("name", ""))
         best = None
         for stage_name, st_terms in stage_terms_map.items():
@@ -294,7 +274,7 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence, prefs=None):
                 ref = "含参考资料" if e.get("has_references") else "无大体积参考"
                 cards.append(f"[{low}]({s0:.1f}，证据: {ev or '同名'}；{ref}) {_desc_of(e, 50)}")
             notes.append(
-                f"⚠ 阶段「{stage_name}」并列候选（打分相差≤10%）——请人工确认用哪个："
+                f"阶段「{stage_name}」并列候选（打分相差≤10%）——请人工确认用哪个："
                 + "；".join(cards)
                 + f"。确认后执行 `profile --stage-pref 「{stage_name}={scored[0][3]}」` 写入记忆，此后自动选用。")
             for s0, _p, _f, low, e in scored[:3]:
