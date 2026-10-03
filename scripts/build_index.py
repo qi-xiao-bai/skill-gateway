@@ -462,7 +462,7 @@ def cmd_search(a):
     )
     if any(k in a.query.lower() for k in task_keywords):
         print("\n[skill-gateway] 复合工程任务建议用 pipeline 生成多技能流水线:")
-        print(f'  python scripts/build_index.py pipeline "{a.query}"')
+        print(f'  /skill-gateway pipeline "{a.query}"')
 
     best_hit = hits[0][1]["name"] if hits else "无"
     rel_names_str = "、".join(all_related[:3])
@@ -597,11 +597,11 @@ def cmd_route(a):
             "（宿主目录不可达：平台清单 -> 镜像 -> indexer）"
         )
     elif cmd in ("pipeline", "chain", "chat", "search", "content-find"):
-        print(f'执行: python scripts/build_index.py {cmd} "{clean_q}"')
+        print(f'执行: /skill-gateway {cmd} "{clean_q}"')
     elif cmd in ("explain", "detail", "onboard", "diff", "related") and target:
-        print(f"执行: python scripts/build_index.py {cmd} {target}")
+        print(f"执行: /skill-gateway {cmd} {target}")
     else:
-        print(f"执行: python scripts/build_index.py {cmd}")
+        print(f"执行: /skill-gateway {cmd}")
 
 
 def cmd_catalog(a):

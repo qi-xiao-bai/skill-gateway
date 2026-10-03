@@ -337,8 +337,8 @@ def onboard_text(entries, edges, name):
     lines.append(f"1. **触发技能**: 使用技能名 `{target_entry['name']}` 或触发词激活")
     if target_entry.get("triggers"):
         lines.append(f"2. **触发词**: {'、'.join(target_entry['triggers'][:5])}")
-    lines.append(f"3. **查看全文**: `python scripts/build_index.py detail {target_entry['name']}`")
-    lines.append(f"4. **查看关联**: `python scripts/build_index.py related {target_entry['name']}`\n")
+    lines.append(f"3. **查看全文**: `/skill-gateway detail {target_entry['name']}`")
+    lines.append(f"4. **查看关联**: `/skill-gateway related {target_entry['name']}`\n")
 
     if target_entry.get("has_references"):
         lines.append("## 注意\n")
