@@ -414,6 +414,7 @@ def generate_dashboard_html(entries, edges):
             "platform": e.get("platform", ""),
             "agent_bound": e.get("agent_bound"),
             "agents": e.get("agents", []),
+            "variant_of": e.get("variant_of", ""),
         })
 
     links = []
