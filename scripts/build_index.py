@@ -373,11 +373,10 @@ def cmd_search(a):
 
     if hits[0][1].get("ambiguous"):
         tg = hits[0][1]["tie_group"]
-        print(
-            "⚠ **并列候选——打分高度接近，需人工确认用哪个**："
-            + " / ".join(f"**{t['name']}**({t['score']})" for t in tg)
-            + "\n"
-        )
+        print("⚠ **并列候选——打分高度接近，需人工确认用哪个**：")
+        for t in tg:
+            print(f"  - **{t['name']}**({t['score']}) {t['description'][:70]}")
+        print()
 
     edges = index_store.read_edges() or []
     by_id = retrieval.build_id_map(entries)
@@ -791,11 +790,10 @@ def cmd_chat(a):
 
     if hits[0][1].get("ambiguous"):
         tg = hits[0][1]["tie_group"]
-        print(
-            "⚠ **并列候选——打分高度接近，需人工确认用哪个**："
-            + " / ".join(f"**{t['name']}**({t['score']})" for t in tg)
-            + "\n"
-        )
+        print("⚠ **并列候选——打分高度接近，需人工确认用哪个**：")
+        for t in tg:
+            print(f"  - **{t['name']}**({t['score']}) {t['description'][:70]}")
+        print()
 
     related_names = set()
     for rank, (score, e, overlap) in enumerate(hits, 1):

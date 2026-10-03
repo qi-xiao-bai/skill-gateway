@@ -251,12 +251,20 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence, prefs=None):
             base = max(s1, s2, 1e-6)
             tie = abs(s1 - s2) <= 0.10 * base
         if tie:
+            cards = []
+            for it in pool[:3]:
+                e = it[3]
+                ev = "、".join(it[3].get("lifecycle_evidence", []) or
+                              (evidence.get(e["name"].lower()) or [])[:3])
+                ref = "含参考资料" if e.get("has_references") else "无大体积参考"
+                cards.append(f"[{e['name']}]（证据: {ev or '同名'}；{ref}）"
+                             f"{_desc_of(e, 60)}")
             tied = [it[3]["name"] for it in pool[:3]]
             notes.append(
-                f"⚠ 阶段「{stage_name}」并列候选（打分相差≤10%）："
-                + "、".join(f"[{n}]" for n in tied)
-                + f" —— 请人工确认用哪个；确认后执行 "
-                  f"`profile --stage-pref 「{stage_name}={tied[0]}」` 写入记忆，此后自动选用。")
+                f"⚠ 阶段「{stage_name}」并列候选（打分相差≤10%）——请人工确认用哪个："
+                + "；".join(cards)
+                + f"。确认后执行 `profile --stage-pref 「{stage_name}={tied[0]}」` "
+                  f"写入记忆，此后自动选用。")
             for it in pool[:3]:
                 claim[it[2]] = stage_name
                 used.add(it[2].lower())
