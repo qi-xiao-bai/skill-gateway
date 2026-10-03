@@ -109,23 +109,21 @@ class MetaConsistencyTests(unittest.TestCase):
 
 
     def test_8_platform_attribution_single_source(self):
-        """⑧ 归属判定必须统一走 _platOf()——分组和过滤不得内联归属逻辑。"""
+        """⑧ 归属判定必须统一走 _platOf()——inspector chips 和节点过滤不得内联归属逻辑。"""
         import re as _re
         tpl = os.path.join(SCRIPTS, "..", "templates", "dashboard_template.html")
         src = open(tpl, encoding="utf-8").read()
-        # buildPlatformTree 必须调 _platOf（分组归属走统一函数）
-        tree_def = _re.search(r"function buildPlatformTree.*?\n\}", src, _re.S)
-        assert tree_def, "buildPlatformTree not found"
-        self.assertIn("_platOf(d)", tree_def.group(0),
-                      "buildPlatformTree 必须调 _platOf 做归属，不得内联")
+        # _platOf 必须存在（归属判定唯一真源）
+        self.assertIn("function _platOf", src, "_platOf 必须存在")
+        # _platOf 必须包含 variant_of 继承链
+        self.assertIn("d.variant_of", src, "_platOf 必须沿 variant_of 回溯变体归属")
         # 节点过滤必须调 _platOf
-        filter_hit = _re.search(
-            r'currentPlat\.type === "platform" && _platOf\(d\)', src)
+        filter_hit = _re.search(r'currentPlat\.type === "platform" && _platOf\(d\)', src)
         self.assertIsNotNone(filter_hit,
                              "节点过滤必须调 _platOf，不得内联归属逻辑")
-        # _platOf 必须包含 variant_of 继承链
-        self.assertIn("d.variant_of", src,
-                      "_platOf 必须沿 variant_of 回溯变体归属")
+        # inspector chips 必须调 setPlatFilter
+        self.assertIn('onclick="setPlatFilter', src,
+                      "inspector 的 filter-chip 必须调 setPlatFilter")
 
 
 if __name__ == "__main__":
