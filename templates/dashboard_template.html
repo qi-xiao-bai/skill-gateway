@@ -767,20 +767,20 @@
     opacity: 1;
   }
 
-/* 平台/智能体选择器：全量默认；平台 hover 右弹 agent 子列表 */
-.plat-select{position:relative;margin-right:8px}
-.plat-btn{min-width:96px;text-align:center}
-.plat-menu{position:absolute;top:120%;right:0;min-width:200px;background:#1e1e2e;border:1px solid var(--border-color);border-radius:8px;padding:6px 0;display:none;z-index:60;box-shadow:0 8px 24px rgba(0,0,0,.45)}
-.plat-select.open .plat-menu{display:block}
+/* 平台选择器：内嵌在筛选排内（platPill 触发下拉），行高与 pill 对齐 */
+.plat-wrap{position:relative;display:inline-flex;margin-right:6px;vertical-align:top}
+.plat-menu{position:absolute;top:120%;left:0;min-width:200px;background:#1e1e2e;border:1px solid var(--border-color);border-radius:8px;padding:6px 0;display:none;z-index:60;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.plat-wrap.open .plat-menu{display:block}
 .plat-item{position:relative;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:6px 14px;cursor:pointer;font-size:12px;white-space:nowrap;color:var(--text-dim)}
 .plat-item:hover{background:rgba(136,150,200,.14);color:var(--text)}
 .plat-item .cnt{font-size:11px;opacity:.7}
-.plat-item.has-sub::after{content:"▸";margin-left:6px;font-size:10px}
+.plat-item.has-sub::after{content:"b8";margin-left:6px;font-size:10px}
 .plat-sub{position:absolute;left:100%;top:0;min-width:150px;background:#1e1e2e;border:1px solid var(--border-color);border-radius:8px;padding:4px 0;display:none;box-shadow:0 8px 24px rgba(0,0,0,.45)}
 .plat-item:hover .plat-sub{display:block}
 .plat-sub-item{padding:5px 14px;cursor:pointer;font-size:12px;color:var(--text-dim)}
 .plat-sub-item:hover{background:rgba(136,150,200,.14);color:var(--text)}
 .plat-active{background:rgba(2,132,199,.18)!important;color:var(--text)!important}
+.plat-none{padding:6px 14px;font-size:12px;color:var(--text-dim);opacity:.6;cursor:default}
 </style>
 </head>
 <body>
@@ -835,16 +835,15 @@
   <div class="nav-right">
     <div class="filter-pills">
       <button class="filter-btn active" data-filter="all" data-i18n="filter_all">全部</button>
-      <button class="filter-btn" data-filter="ready" data-i18n="filter_ready">平台可用</button>
+      <div class="plat-wrap">
+        <button class="filter-btn" id="platPill" data-i18n="plat_select" title="切换平台：显示对应平台的全部技能 / Switch platform">平台</button>
+        <div class="plat-menu" id="platMenu"></div>
+      </div>
       <button class="filter-btn" data-filter="skill" data-i18n="filter_skill">仅技能</button>
       <button class="filter-btn" data-filter="mcp" data-i18n="filter_mcp">仅MCP</button>
       <button class="filter-btn" data-filter="excluded" data-i18n="filter_excluded">已排除</button>
     </div>
 
-    <div class="plat-select" id="platSelect">
-      <button class="btn btn-lang plat-btn" id="platBtn" data-i18n="plat_select" title="切换平台：显示对应平台的全部技能 / Switch platform">平台</button>
-      <div class="plat-menu" id="platMenu"></div>
-    </div>
 
     <!-- Bilingual Toggle Button -->
     <button id="btnLang" class="btn btn-lang" title="Toggle Language / 切换语言">
@@ -987,6 +986,7 @@ const I18N = {
     filter_ready: "平台可用",
     plat_all: "全量显示",
     plat_select: "平台",
+    plat_none: "无",
     plat_unlabeled: "未标注",
     filter_skill: "仅技能",
     filter_mcp: "仅MCP/连接器",
@@ -1056,6 +1056,7 @@ const I18N = {
     filter_ready: "Platform Ready",
     plat_all: "Show All",
     plat_select: "Platform",
+    plat_none: "None",
     plat_unlabeled: "Unlabeled",
     filter_skill: "Skills",
     filter_mcp: "MCP / Connectors",
@@ -1744,7 +1745,7 @@ function applyCategoryFilter() {
     if (currentFilter === "skill" && d.type !== "skill") return "none";
     if (currentFilter === "mcp" && d.type !== "mcp") return "none";
     if (currentFilter === "excluded" && !d.excluded) return "none";
-    if (currentPlat) {
+    if (currentPlat && currentFilter !== "excluded") { // 已排除口径独立审计，不叠平台过滤
       if (currentPlat.type === "platform" && _platOf(d) !== (currentPlat.value === "__unlabeled__" ? t("plat_unlabeled") : currentPlat.value)) return "none";
       if (currentPlat.type === "agent" && !(d.agents || []).includes(currentPlat.value)) return "none";
     }
@@ -1861,10 +1862,12 @@ document.getElementById("btnToggleSim").addEventListener("click", function() {
 
 // Filter Buttons
 document.querySelectorAll(".filter-btn").forEach(btn => {
+  if (!btn.getAttribute("data-filter")) return; // 平台 pill 是下拉触发器，不参与口径切换
   btn.addEventListener("click", function() {
     document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
     this.classList.add("active");
     currentFilter = this.getAttribute("data-filter");
+    if (currentPlat) setPlatFilter(null); // 切换口径时清平台过滤，避免叠加出空视图
     applyCategoryFilter();
   });
 });
@@ -1913,6 +1916,13 @@ function renderPlatformMenu() {
   };
   menu.appendChild(mk(t("plat_all"), nodes.filter(d=>!d.excluded).length, null,
     () => setPlatFilter(null), currentPlat === null));
+  if (Object.keys(tree).length <= 1) {
+    const none = document.createElement("div");
+    none.className = "plat-none";
+    none.textContent = t("plat_none");
+    menu.appendChild(none);
+    return;
+  }
   Object.keys(tree).sort().forEach(plat => {
     const label = plat === "__unlabeled__" ? t("plat_unlabeled") : plat;
     menu.appendChild(mk(label, tree[plat].count, tree[plat].agents,
@@ -1922,18 +1932,22 @@ function renderPlatformMenu() {
 }
 function setPlatFilter(f) {
   currentPlat = f;
-  const btn = document.getElementById("platBtn");
+  document.querySelectorAll(".filter-btn").forEach(b => {
+    if (b.getAttribute("data-filter")) b.classList.remove("active");
+  });
+  document.getElementById("platPill").classList.toggle("active", !!f);
+  const btn = document.getElementById("platPill");
   if (!f) { btn.textContent = t("plat_select"); }
   else if (f.type === "platform") {
     btn.textContent = (f.value === "__unlabeled__" ? t("plat_unlabeled") : f.value);
   } else { btn.textContent = f.value; }
-  document.getElementById("platSelect").classList.remove("open");
+  document.getElementById("platPill").parentElement.classList.remove("open");
   renderPlatformMenu();
   applyCategoryFilter();
 }
 (function initPlatSelect() {
-  const sel = document.getElementById("platSelect");
-  document.getElementById("platBtn").onclick = e => {
+  const sel = document.getElementById("platPill").parentElement;
+  document.getElementById("platPill").onclick = e => {
     e.stopPropagation();
     sel.classList.toggle("open");
     if (sel.classList.contains("open")) renderPlatformMenu();

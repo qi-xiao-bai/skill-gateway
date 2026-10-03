@@ -424,6 +424,24 @@ def cmd_list(a):
         print(f"    path: {e['path']}")
 
 
+def _print_gap_candidates(entries, query):
+    """能力缺口驱动发现：绑定集缺该能力时，全库（--all 口径）审计找出可绑定的
+    候选并展示；候选打分并列（≤10%）时明示交人工选择——缺口不能只提示，
+    要把"可绑什么"摆到用户面前。"""
+    cand = []
+    for s_, e_, _m in retrieval.search(entries, query, top=8, include_off_list=True):
+        if e_.get("visibility") == "off-list":
+            cand.append((round(float(s_), 1), e_["name"], (e_.get("description") or "")[:60]))
+    if not cand:
+        return
+    print("能力缺口候选（全库审计发现，绑定后即可命中）：")
+    for s_, nm, d_ in cand[:3]:
+        print(f"  {s_:6.1f}  {nm}: {d_}")
+    if len(cand) >= 2 and cand[0][0] - cand[1][0] <= 0.10 * max(cand[0][0], 1e-6):
+        print("  ⚠ 并列候选（分差≤10%）——请人工确认绑定哪个（更新 inputs/agent_list.json 后"
+              "重跑 agent-index --agent <身份>）。")
+
+
 def cmd_search(a):
     cli_excludes = a.exclude
     entries = index_store.load_index()
@@ -513,6 +531,7 @@ def cmd_search(a):
     gap, gap_msg = retrieval.gap_notice(a.query, hits)
     if gap:
         print(gap_msg)
+        _print_gap_candidates(entries, a.query)
 
     # 复杂工程与研发任务场景下，主动引导 pipeline 流水线串联
     # （只认多字职责词——单字"做/写/修"会让几乎所有中文 query 都触发营销块）
@@ -926,6 +945,7 @@ def cmd_chat(a):
     gap, gap_msg = retrieval.gap_notice(query, hits)
     if gap:
         print(gap_msg)
+        _print_gap_candidates(entries, query)
         print()
 
     # 4. 内容检索补充
