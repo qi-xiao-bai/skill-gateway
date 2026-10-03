@@ -970,6 +970,7 @@
 <script>
 // Raw Data Injected from Python
 const rawNodes = __DATA_NODES__;
+const currentAgentIdentity = __CURRENT_AGENT__;
 const rawLinks = __DATA_LINKS__;
 const edgeColors = __DATA_EDGE_COLORS__;
 const edgeTypesSeen = __DATA_EDGE_TYPES__;
@@ -1941,6 +1942,21 @@ function setPlatFilter(f) {
     if (!sel.contains(ev.target)) sel.classList.remove("open");
   });
   renderPlatformMenu();
+  // 默认定位到本平台（登记表声明的当前智能体）：打开面板即显示本平台全部技能
+  if (currentAgentIdentity) {
+    const tree = buildPlatformTree();
+    if (tree[currentAgentIdentity]) {
+      setPlatFilter({type: "platform", value: currentAgentIdentity});
+    } else {
+      let found = false;
+      Object.keys(tree).forEach(plat => {
+        if (!found && tree[plat].agents.has(currentAgentIdentity)) {
+          found = true;
+          setPlatFilter({type: "agent", value: currentAgentIdentity});
+        }
+      });
+    }
+  }
 })();
 
 document.getElementById("toggleExcluded").addEventListener("change", applyCategoryFilter);

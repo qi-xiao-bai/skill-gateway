@@ -461,6 +461,14 @@ def generate_dashboard_html(entries, edges):
     def _safe_json(obj):
         return json.dumps(obj, ensure_ascii=False).replace("<", "\u003c")
     html = html.replace("__DATA_NODES__", _safe_json(nodes))
+    # 当前智能体身份（登记表 current_agent / 环境变量）——面板默认定位到本平台
+    cur_agent = ""
+    try:
+        import scanner as _sc
+        cur_agent = _sc.available_list_agent() or ""
+    except Exception:
+        pass
+    html = html.replace("__CURRENT_AGENT__", _safe_json(cur_agent))
     html = html.replace("__DATA_LINKS__", _safe_json(links))
     html = html.replace("__DATA_EDGE_COLORS__", _safe_json(edge_colors))
     html = html.replace("__DATA_EDGE_TYPES__", _safe_json(sorted(edge_types_seen)))
