@@ -446,7 +446,15 @@ def discover_env_skill_roots():
     返回真实存在的目录列表；无法判定返回 []——调用方**不得**在空结果时
     回退全机器扫描（会把整台机器的技能灌进共享清单）。"""
     roots = []
-    for rel in ENV_SKILL_DECLARATIONS:
+    declarations = list(ENV_SKILL_DECLARATIONS)
+    try:
+        prof = load_skill_profile()
+        extra = prof.get("env_skill_declarations") or []
+        if isinstance(extra, list):
+            declarations += [str(x) for x in extra]
+    except Exception:
+        pass
+    for rel in declarations:
         p = expand(rel)
         try:
             with open(p, encoding="utf-8") as f:

@@ -8,6 +8,7 @@ import argparse
 import json
 import time
 import os
+import re
 import sys
 
 sys.dont_write_bytecode = True
@@ -121,9 +122,15 @@ def cmd_agent_index(a):
     else:
         # 自助模式按"环境声明/父目录"圈定挂载集，绝不回退全机器扫描
         # （全机器灌入会让共享清单被 agents=[default] 的整盘技能污染）
-        env_dirs = [d for d in paths.discover_env_skill_roots()
-                    if os.path.normcase(paths.ROOT).startswith(os.path.normcase(d) + os.sep)
-                    or os.path.normcase(paths.ROOT) == os.path.normcase(d)]
+        # 技能根声明优先级：--skill-dirs（agent 显式声明）> 环境声明文件（仅当本副本
+        # 确实住在声明库内才生效）> 父目录兜底；都没有 → 拒绝，绝不全机器灌入
+        declared = getattr(a, "skill_dirs", "") or ""
+        if declared:
+            env_dirs = [d for d in (x.strip() for x in re.split(r"[;|]", declared) + declared.split(os.pathsep)) if d and os.path.isdir(d)]
+        else:
+            env_dirs = [d for d in paths.discover_env_skill_roots()
+                        if os.path.normcase(paths.ROOT).startswith(os.path.normcase(d) + os.sep)
+                        or os.path.normcase(paths.ROOT) == os.path.normcase(d)]
         if not env_dirs:
             # 声明文件是机器级的，但只对"本副本确实住在该声明库里"时生效
             # （其他位置的副本不被别人的声明误圈定）
@@ -989,7 +996,8 @@ def cmd_content_find(a):
 def cmd_pipeline(a):
     """技能图谱串联编排：按任务检索 + 依图谱拓扑自动生成多技能协同流水线（无硬编码模板）。"""
     pipe = pipeline_mod.build_pipeline(a.query, include_off_list=getattr(a, "all_items", False),
-                                       agent_only=getattr(a, "agent_only", False))
+                                       agent_only=getattr(a, "agent_only", False),
+                                       lifecycle=True if getattr(a, "force_lifecycle", False) else None)
     if a.json:
         clean_pipe = {
             "task": pipe["task"],
@@ -1342,6 +1350,9 @@ COMMANDS = [
             (("--agent",), {"help": "当前智能体名（写入 current_agent，并作为每项默认 agents）"}),
             (("--content",), {"action": "store_true",
                                "help": "同时重建内容索引（默认跳过——首次全量最耗时；未命中自愈会自动补）"}),
+            (("--skill-dirs",), {"help": "声明当前环境的技能挂载根（分号/路径分隔符分隔多个）。"
+                                              "调用方 agent 知道自己的平台把技能挂在哪里，直接声明即可——"
+                                              "发现扫描根缺失时用这个参数，不要改代码"}),
             (("--prune-agent",), {"help": "清除指定智能体的绑定（agents 含该名的条目被移出清单），用于清理误导入"}),
         ],
     },
@@ -1535,6 +1546,8 @@ COMMANDS = [
                            "help": "全量审计视图：编排种子放行平台未绑定(off-list)技能"}),
             (("--agent",), {"action": "store_true", "dest": "agent_only",
                              "help": "Agent 绑定口径：编排种子只取当前 Agent 绑定的技能（非默认，默认平台口径）"}),
+            (("--lifecycle",), {"action": "store_true", "dest": "force_lifecycle",
+                                  "help": "按开发生命周期契约编排（开发/工程任务由调用方 agent 显式声明——CLI 不猜意图）"}),
         ],
     },
     {

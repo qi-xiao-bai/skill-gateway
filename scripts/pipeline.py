@@ -26,9 +26,6 @@ LIFECYCLE_STAGES = (
     ("安全卡点", "安全审查 安全漏洞 卡点 owasp vulnerability"),
     ("归档交付", "归档 交付 文档 documentation delivery doc archive"),
 )
-DEV_TASK_KEYWORDS = ("开发", "实现", "修复", "改造", "重构", "部署", "新增", "上线",
-                     "排查", "审批联动", "bug", "fix", "develop", "implement",
-                     "deploy", "refactor")
 EXPAND_TOP = 9  # 子图节点上限（种子 + depends_on 指向的支撑技能）
 MAX_STAGE_SKILLS = 3  # 单阶段并行技能上限（超出按相关度截断）
 
@@ -147,11 +144,6 @@ def _domain_locked(name, task_terms):
     if not toks:
         return False
     return any(t not in _LIFECYCLE_VOCAB and t not in task_terms for t in toks)
-
-
-def _is_dev_task(query):
-    ql = (query or "").lower()
-    return any(k in ql for k in DEV_TASK_KEYWORDS)
 
 
 def _lifecycle_stages(query, entries, domain_seeds, evidence, prefs=None):
@@ -307,7 +299,9 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence, prefs=None):
 
 
 def build_pipeline(query, entries=None, edges=None, seed_top=SEED_TOP, _retried=False,
-                   include_off_list=False, agent_only=False):
+                   include_off_list=False, agent_only=False, lifecycle=None):
+    """lifecycle=True 强制按开发生命周期契约编排；None=按 DEV_TASK_KEYWORDS 自动
+    检测；False 强制图谱模式。调用方 agent 知道自己的任务类型，可直接声明。"""
     """图谱驱动编排：
     1. retrieval.search 按任务检索种子技能（证据 = 命中词）；
     2. 沿 depends_on 边把被依赖技能纳入子图（支撑节点）；
@@ -356,7 +350,7 @@ def build_pipeline(query, entries=None, edges=None, seed_top=SEED_TOP, _retried=
 
     # 开发任务生命周期契约（代码化）：检测到开发任务且绑定集能支撑 ≥3 个阶段时，
     # 按生命周期编排，缺口阶段声明通用能力承接——开发任务不再只命中一个技能
-    if _is_dev_task(query):
+    if lifecycle:
         lc_stages, lc_notes, n_general = _lifecycle_stages(
             query, entries, seeds, dict(evidence),
             prefs=(load_skill_profile() or {}).get("stage_preferences") or {})
