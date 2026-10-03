@@ -10,7 +10,7 @@ import re
 
 import index_store
 import retrieval
-from paths import get_pinned_skills, get_user_directives
+from paths import get_pinned_skills, get_user_directives, load_skill_profile
 
 SEED_TOP = 6  # 任务检索取几个种子技能
 # 开发任务生命周期契约（SKILL.md 阶段契约的代码化）：阶段固定、阶段→技能检索动态决定
@@ -165,7 +165,7 @@ def _is_dev_task(query):
     return any(k in ql for k in DEV_TASK_KEYWORDS)
 
 
-def _lifecycle_stages(query, entries, domain_seeds, evidence):
+def _lifecycle_stages(query, entries, domain_seeds, evidence, prefs=None):
     """开发任务生命周期编排：阶段固定为开发生命周期，阶段→技能由检索动态决定；
     领域种子并入"编码实现"阶段作领域上下文；检索无匹配的阶段声明"通用能力承接"。
     返回 (stages, notes, n_general)。仅当 ≥3 个阶段检索到技能才启用（否则说明
@@ -184,7 +184,7 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence):
     # 名称亲和全局预分配：名字与阶段查询有交集的技能，归入其 IDF 加权最优阶段
     # （security-review 的 security 是稀有词 → 必归"安全卡点"，不被"审查把关"的
     #   review 抢走；code-review 的 code+review 双词 → 稳归"审查把关"）
-    claim = {}
+    claim_pool = {}  # stage -> [(specif, idf_score, low, entry)]：同阶段多候选只留最强
     for e in entries:
         low = e.get("name", "").lower()
         if low in used or e.get("excluded") or e.get("name") == "skill-gateway":
@@ -200,12 +200,7 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence):
         reserved_hits = [(name, max((len(t) for t in name_tokens & toks), default=0))
                          for name, toks in _STAGE_RESERVED_TOKENS.items()
                          if name_tokens & toks]
-        if reserved_hits:
-            reserved_hits.sort(key=lambda x: -x[1])  # 最长命中词元 = 最专指的归属
-            claim[low] = reserved_hits[0][0]
-            used.add(low)
-            continue
-        # 2) 其余按 IDF 加权的名称亲和归入最优阶段
+        # 2) 否则按 IDF 加权的名称亲和归入最优阶段
         best = None
         for stage_name, st_terms in stage_terms_map.items():
             hit_terms = nt & st_terms
@@ -214,9 +209,61 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence):
             score = sum(weights.get(t, 0.0) for t in hit_terms)
             if best is None or score > best[1] + 1e-9:
                 best = (stage_name, score)
-        if best:
-            claim[low] = best[0]
-            used.add(low)
+        pick = (max(reserved_hits, key=lambda x: x[1])[0], 0) if reserved_hits             else ((best[0], 0) if best else None)
+        if not pick:
+            continue
+        idf_score = sum(weights.get(t, 0.0) for t in nt & stage_terms_map.get(pick[0], set()))             or best[1] if best else 0.0
+        claim_pool.setdefault(pick[0], []).append((pick[1], idf_score, low, e))
+
+    # 同阶段多候选 → 只留最强（词元最长/IDF 最高），避免同职技能挤满一个阶段
+    claim = {}
+    # 同阶段多候选只留"最强"一个。强弱判据（按序，随使用数据自我校准）：
+    #   ① 用户置顶 pinned（显式意志）② proactive 使用频次（真实使用记录）
+    #   ③ 阶段检索得分（IDF 相关性）④ 保留词命中长度 ⑤ 名称稳定序
+    try:
+        import proactive as _pro
+        _freq = (_pro.load_proactive_state() or {}).get("skill_frequency", {}) or {}
+    except Exception:
+        _freq = {}
+    _pinned = {n.lower() for n in get_pinned_skills()}
+
+    def _strength(item):
+        specif, rel_score, low, _e = item
+        return (1 if low in _pinned else 0,
+                int(_freq.get(low, 0) or 0),
+                round(rel_score, 3), specif, low)
+
+    prefs = prefs or {}
+    for stage_name, pool in claim_pool.items():
+        pool.sort(key=_strength, reverse=True)
+        pref_low = (prefs.get(stage_name) or "").strip().lower()
+        pick = next((it for it in pool if it[2].lower() == pref_low), None)             if pref_low else None
+        if pick is not None:
+            # 用户此前已确认过该阶段的人选（stage_preferences 记忆）→ 自动选用
+            notes.append(f"阶段「{stage_name}」已按记忆偏好选用 [{pick[2]}]。")
+            claim[pick[2]] = stage_name
+            used.add(pick[2].lower())
+            continue
+        # 10% 并列检测：次名与首名的检索得分相差 ≤10% → 不擅自定夺，交人工确认
+        tie = False
+        if len(pool) >= 2:
+            s1, s2 = abs(pool[0][1]), abs(pool[1][1])
+            base = max(s1, s2, 1e-6)
+            tie = abs(s1 - s2) <= 0.10 * base
+        if tie:
+            tied = [it[3]["name"] for it in pool[:3]]
+            notes.append(
+                f"⚠ 阶段「{stage_name}」并列候选（打分相差≤10%）："
+                + "、".join(f"[{n}]" for n in tied)
+                + f" —— 请人工确认用哪个；确认后执行 "
+                  f"`profile --stage-pref 「{stage_name}={tied[0]}」` 写入记忆，此后自动选用。")
+            for it in pool[:3]:
+                claim[it[2]] = stage_name
+                used.add(it[2].lower())
+            continue
+        specif, _score, low, _e = pool[0]
+        claim[low] = stage_name
+        used.add(low)
 
     stage_members = {name: [] for name, _q in LIFECYCLE_STAGES}
     for e in domain_seeds:
@@ -227,7 +274,7 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence):
     for stage_name, stage_query in LIFECYCLE_STAGES:
         if stage_members[stage_name]:
             continue
-        hits = retrieval.search(entries, stage_query, top=3)
+        hits = retrieval.search(entries, stage_query, top=1)
         for _s, e, m in hits:
             low = e["name"].lower()
             if low in used or len(stage_members[stage_name]) >= MAX_STAGE_SKILLS:
@@ -237,6 +284,7 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence):
             used.add(low)
             evidence.setdefault(low, m)
             stage_members[stage_name].append(e)
+            break  # 兜底阶段只补 1 个，不堆同职技能
         if not stage_members[stage_name]:
             n_general += 1
             notes.append(f"阶段「{stage_name}」检索无匹配技能 → 通用能力承接。")
@@ -313,7 +361,8 @@ def build_pipeline(query, entries=None, edges=None, seed_top=SEED_TOP, _retried=
     # 按生命周期编排，缺口阶段声明通用能力承接——开发任务不再只命中一个技能
     if _is_dev_task(query):
         lc_stages, lc_notes, n_general = _lifecycle_stages(
-            query, entries, seeds, dict(evidence))
+            query, entries, seeds, dict(evidence),
+            prefs=(load_skill_profile() or {}).get("stage_preferences") or {})
         if len(lc_stages) >= 3:
             return {
                 "task": query,

@@ -1033,6 +1033,25 @@ def cmd_profile(a):
         else:
             print(f"[profile] 配置文件已存在: {prof_path}")
 
+    if getattr(a, "stage_pref", None):
+        prof = paths.load_skill_profile()
+        sp = prof.get("stage_preferences") or {}
+        for item in a.stage_pref:
+            if "=" in item:
+                stg, sk = item.split("=", 1)
+                sp[stg.strip()] = sk.strip()
+        prof["stage_preferences"] = sp
+        paths._PROFILE_CACHE["key"] = None
+        with open(prof_path, "w", encoding="utf-8") as f:
+            json.dump(prof, f, ensure_ascii=False, indent=2)
+        for stg, sk in sp.items():
+            print(f"[profile] 阶段偏好已写入记忆: {stg} -> {sk}")
+        try:
+            proactive.sync_memory_markdown(prof)
+            print("[profile] 已同步活跃记忆到 output/memory.md")
+        except Exception:
+            pass
+
     set_roots = a.set_roots
     add_roots = [a.add_root] if a.add_root else None
     only_fixed = (
@@ -1490,6 +1509,8 @@ COMMANDS = [
             (("--unpin",), {"help": "从常用置顶名单中移除某技能"}),
             (("--exclude",), {"help": "添加技能排除通配规则 (exclude_skills)"}),
             (("--add-directive",), {"help": "沉淀全局用户重要指令 (user_directives)"}),
+            (("--stage-pref",), {"action": "append", "dest": "stage_pref",
+                                  "help": "写入阶段偏好记忆：--stage-pref 「阶段=技能名」（并列候选人工确认后用，可重复）"}),
             (("--remove-directive",), {"help": "移除指定用户全局指令"}),
             (("--clear-directives",), {"action": "store_true", "help": "清空全部用户全局指令"}),
             (("--reason",), {"help": "变更背景/原因（记录到 corrections.md）"}),
