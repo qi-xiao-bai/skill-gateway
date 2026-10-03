@@ -40,7 +40,6 @@ def _load_cache():
 
 def _save_cache():
     try:
-        from paths import out_path
         import index_store
         p = _cache_path()
         os.makedirs(os.path.dirname(p), exist_ok=True)
@@ -98,7 +97,7 @@ def translate_en_zh(text, timeout=8):
     return ""
 
 
-def translate_missing(entries, agent_name=None):
+def translate_missing(entries):
     """给缺中文描述的条目现场翻译并回填（只改内存副本，由调用方落盘到登记表）。
     返回 (翻译成功数, 失败数)。"""
     ok = fail = 0

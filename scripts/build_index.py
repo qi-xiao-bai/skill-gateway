@@ -209,7 +209,7 @@ def cmd_agent_index(a):
     if _need_zh and not getattr(a, "no_translate", False):
         try:
             import translate as _tr
-            _ok, _fail = _tr.translate_missing(_need_zh, agent_name)
+            _ok, _fail = _tr.translate_missing(_need_zh)
             if _ok:
                 print(f"[agent-index] 翻译 API 现场回填中文描述 {_ok} 条"
                       + (f"（{_fail} 条失败，下次重试）" if _fail else ""))
