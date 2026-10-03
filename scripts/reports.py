@@ -355,7 +355,23 @@ _TEMPLATE_FILE = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(_
 
 def _load_template():
     with open(_TEMPLATE_FILE, encoding="utf-8") as f:
-        return f.read()
+        tpl = f.read()
+    # D3 内联：dashboard 保持单文件自包含（离线/内网/无外网沙箱都能出图）；
+    # 库文件缺失或内容异常时回退 CDN 外链，模板占位符绝不裸留在产物里
+    d3_path = os.path.join(os.path.dirname(_TEMPLATE_FILE), "d3.v7.min.js")
+    try:
+        with open(d3_path, encoding="utf-8") as f:
+            d3_src = f.read()
+        if "</script>" in d3_src.lower() or "__D3_INLINE__" in d3_src:
+            raise ValueError("d3 bundleUnsafe: contains script terminator or placeholder")
+        tpl = tpl.replace("__D3_INLINE__", d3_src, 1)
+    except (OSError, ValueError):
+        tpl = tpl.replace(
+            "<script>__D3_INLINE__</script>",
+            '<script src="https://d3js.org/d3.v7.min.js"></script>', 1)
+    if "__D3_INLINE__" in tpl:
+        raise RuntimeError("dashboard template: __D3_INLINE__ placeholder unresolved")
+    return tpl
 
 
 # dashboard 注入的展示配额（与 dense 索引同一来源，不另写魔法数）

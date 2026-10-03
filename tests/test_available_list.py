@@ -177,5 +177,26 @@ class AvailableListTests(unittest.TestCase):
         self.assertEqual(doc["current_agent"], "antigravity")
 
 
+    def test_env_roots_memory_roundtrip_and_priority(self):
+        """智能体技能根记忆：--skill-dirs 声明一次写入 env_skill_roots.json，
+        读取按智能体名取回；不同智能体互不干扰。"""
+        import paths as _paths
+        old = os.environ.pop("SKILL_GATEWAY_OUT_DIR", None)
+        try:
+            _paths._save_env_roots_memory("antigravity",
+                                          ["~/.gemini/antigravity/builtin/skills",
+                                           "~/.gemini/config/plugins/science/skills"])
+            _paths._save_env_roots_memory("zcode", ["C:/Users/testuser/.zcode/skills"])
+            mem = _paths._load_env_roots_memory()
+            self.assertEqual(mem["antigravity"],
+                             ["~/.gemini/antigravity/builtin/skills",
+                              "~/.gemini/config/plugins/science/skills"])
+            self.assertEqual(mem["zcode"], ["C:/Users/testuser/.zcode/skills"])
+            os.remove(os.path.join(_paths.ROOT, "inputs", "env_skill_roots.json"))
+        finally:
+            if old is not None:
+                os.environ["SKILL_GATEWAY_OUT_DIR"] = old
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -772,6 +772,26 @@
 .filter-chip{cursor:pointer;color:var(--accent,#2196f3);border-bottom:1px dashed var(--accent,#2196f3);padding:0 1px}
 .filter-chip:hover{background:rgba(33,150,243,.12);border-radius:2px}
 
+/* 顶部过滤器悬停下拉：技能/MCP/连接器 chip → 平台列表 → 悬停平台右弹 Agent 子列表。
+   注意不可加 overflow 裁剪：Agent 飞出定位在盒子外侧，会被 overflow 剪掉（画不出、点不到） */
+.plat-menu{position:fixed;z-index:1200;min-width:190px;background:var(--bg-card-solid,#18181b);
+  border:1px solid var(--border-color);border-radius:10px;box-shadow:0 14px 36px rgba(0,0,0,.6);
+  padding:6px;display:none}
+.plat-menu.show{display:block}
+.plat-row{position:relative;display:flex;align-items:center;gap:14px;padding:7px 10px;border-radius:6px;
+  font-size:12px;color:var(--text-main);cursor:pointer;white-space:nowrap}
+.plat-row:hover{background:var(--bg-surface-hover)}
+.plat-row .cnt{margin-left:auto;font-size:10px;color:var(--text-dim)}
+.plat-row .arrow{font-size:9px;color:var(--text-dim)}
+.plat-row.selected{color:var(--accent-sky)}
+.plat-row.selected .cnt{color:var(--accent-sky)}
+.plat-row.disabled{color:var(--text-dim);cursor:default}
+.agent-flyout{display:none;position:absolute;left:calc(100% + 4px);top:-7px;min-width:170px;
+  background:var(--bg-card-solid,#18181b);border:1px solid var(--border-color);border-radius:10px;
+  box-shadow:0 14px 36px rgba(0,0,0,.6);padding:6px;z-index:1300}
+.plat-row:hover .agent-flyout,.plat-row.open > .agent-flyout{display:block}
+.filter-btn.has-menu::after{content:"▾";font-size:9px;opacity:.6;margin-left:4px}
+
 </style>
 </head>
 <body>
@@ -824,12 +844,13 @@
   </div>
 
   <div class="nav-right">
-    <div class="filter-pills">
-      <button class="filter-btn active" data-filter="all" data-i18n="filter_all">全部</button>
-      <button class="filter-btn" data-filter="skill" data-i18n="filter_skill">仅技能</button>
-      <button class="filter-btn" data-filter="mcp" data-i18n="filter_mcp">仅MCP</button>
+    <div class="filter-pills" id="filterPills">
+      <button class="filter-btn" data-filter="all" data-i18n="filter_all">全部</button>
+      <button class="filter-btn has-menu" data-filter="skill" data-i18n="filter_skill">技能</button>
+      <button class="filter-btn has-menu" data-filter="mcp" data-i18n="filter_mcp">MCP</button>
+      <button class="filter-btn has-menu" data-filter="connector" data-i18n="filter_connector">连接器</button>
       <button class="filter-btn" data-filter="excluded" data-i18n="filter_excluded">已排除</button>
-      <button class="filter-btn" id="clearPlatBtn" style="display:none" onclick="setPlatFilter(null)" title="清除平台/Agent 筛选 / Clear filter">✕</button>
+      <button class="filter-btn" id="clearPlatBtn" style="display:none" onclick="setPlatFilter(null)" title="清除平台/Agent 筛选 / Clear platform filter">✕</button>
     </div>
 
 
@@ -924,7 +945,8 @@
       <div class="legend-section-title" data-i18n="legend_nodes">节点类型</div>
       <div class="legend-items">
         <div class="legend-item"><div class="legend-dot" style="background:#38bdf8;"></div><span data-i18n="type_skill">技能 (Skill)</span></div>
-        <div class="legend-item"><div class="legend-dot" style="background:#f43f5e;"></div><span data-i18n="type_mcp">MCP 工具</span></div>
+        <div class="legend-item"><div class="legend-dot" style="background:#be123c;"></div><span data-i18n="type_mcp">MCP 工具</span></div>
+        <div class="legend-item"><div class="legend-dot" style="background:#047857; border:1px solid #34d399;"></div><span data-i18n="type_connector">连接器 (Connector)</span></div>
         <div class="legend-item"><div class="legend-dot" style="background:#27272a; border:1px dashed #f87171;"></div><span data-i18n="status_excluded">已排除</span></div>
       </div>
     </div>
@@ -949,11 +971,15 @@
   </div>
 </aside>
 
+<!-- 平台/Agent 悬停下拉：必须挂在 body 直下——top-bar 的 backdrop-filter 会把 fixed 后代
+     拉进自己的层叠/命中上下文，导致下拉/飞出被 inspector 与画布盖住收不到点击 -->
+<div id="platMenu" class="plat-menu"></div>
+
 <!-- Toast -->
 <div id="toast"></div>
 
-<!-- D3.js v7 CDN -->
-<script src="https://d3js.org/d3.v7.min.js"></script>
+<!-- D3.js v7：构建时内联（单文件自包含，离线/内网可用）；库文件缺失时由 reports.py 回退 CDN -->
+<script>__D3_INLINE__</script>
 <script>
 // Raw Data Injected from Python
 const rawNodes = __DATA_NODES__;
@@ -972,10 +998,12 @@ const I18N = {
     search_placeholder: "搜索技能、MCP、触发词或描述... (按 / 聚焦)",
     filter_all: "全部",
     filter_ready: "平台可用",
-    plat_all: "全量显示",
+    plat_all: "全部平台",
     plat_unlabeled: "未标注",
-    filter_skill: "仅技能",
-    filter_mcp: "仅MCP/连接器",
+    plat_empty: "（当前环境无可见条目）",
+    filter_skill: "技能",
+    filter_mcp: "MCP",
+    filter_connector: "连接器",
     filter_excluded: "已排除",
     lang_btn: "English",
     
@@ -992,6 +1020,7 @@ const I18N = {
     copied: "已复制到剪贴板!",
     type_skill: "技能 (Skill)",
     type_mcp: "MCP 工具",
+    type_connector: "连接器 (Connector)",
     status_active: "可用状态",
     status_excluded: "已排除",
     badge_refs: "含参考文档",
@@ -1040,10 +1069,12 @@ const I18N = {
     search_placeholder: "Search skills, MCPs, triggers... (Press / to focus)",
     filter_all: "All",
     filter_ready: "Platform Ready",
-    plat_all: "Show All",
+    plat_all: "All Platforms",
     plat_unlabeled: "Unlabeled",
+    plat_empty: "(no visible items in this environment)",
     filter_skill: "Skills",
-    filter_mcp: "MCP / Connectors",
+    filter_mcp: "MCP",
+    filter_connector: "Connectors",
     filter_excluded: "Excluded",
     lang_btn: "中文",
     
@@ -1060,6 +1091,7 @@ const I18N = {
     copied: "Copied to clipboard!",
     type_skill: "Skill",
     type_mcp: "MCP Tool",
+    type_connector: "Connector",
     status_active: "Active",
     status_excluded: "Excluded",
     badge_refs: "Has References",
@@ -1644,12 +1676,13 @@ function renderInspector(d) {
                    : vis === 'off-list' ? (currentLang === 'zh' ? '平台未绑定（仅全量视图）' : 'Off-list (full view only)')
                    : (currentLang === 'zh' ? '平台标记不可用' : 'Blocked');
       const rows = [];
+      const vt = d.is_connector ? 'connector' : (d.type === 'mcp' ? 'mcp' : 'skill'); // inspector chip 跳转的目标视图
       if (d.category) rows.push(`<div class="guide-row"><strong>${currentLang === 'zh' ? '业务分类' : 'Category'}:</strong> <span>${escapeHtml(d.category)}</span></div>`);
-      if (d.platform) rows.push(`<div class="guide-row"><strong>${currentLang === 'zh' ? '归属平台' : 'Platform'}:</strong> <span class="filter-chip" onclick="setPlatFilter({type:'platform',value:${JSON.stringify(d.platform)}})" title="${currentLang === 'zh' ? '点击筛选此平台' : 'Click to filter by platform'}">${escapeHtml(d.platform)}</span></div>`);
+      if (d.platform) rows.push(`<div class="guide-row"><strong>${currentLang === 'zh' ? '归属平台' : 'Platform'}:</strong> <span class="filter-chip" onclick="setPlatFilter({type:'platform',value:${escapeHtml(JSON.stringify(d.platform))}},'${vt}')" title="${currentLang === 'zh' ? '点击筛选此平台' : 'Click to filter by platform'}">${escapeHtml(d.platform)}</span></div>`);
       if (d.source) rows.push(`<div class="guide-row"><strong>${currentLang === 'zh' ? '来源' : 'Source'}:</strong> <span>${escapeHtml(d.source)}</span></div>`);
-      if (Array.isArray(d.agents) && d.agents.length) rows.push(`<div class="guide-row"><strong>${currentLang === 'zh' ? '绑定 Agent' : 'Bound Agents'}:</strong> <span>${d.agents.map(a => `<span class="filter-chip" onclick="setPlatFilter({type:'agent',value:${JSON.stringify(a)}})" title="${currentLang === 'zh' ? '点击筛选此 Agent' : 'Click to filter by agent'}">${escapeHtml(a)}</span>`).join('、')}</span></div>`);
+      if (Array.isArray(d.agents) && d.agents.length) rows.push(`<div class="guide-row"><strong>${currentLang === 'zh' ? '绑定 Agent' : 'Bound Agents'}:</strong> <span>${d.agents.map(a => `<span class="filter-chip" onclick="setPlatFilter({type:'agent',value:${escapeHtml(JSON.stringify(a))}},'${vt}')" title="${currentLang === 'zh' ? '点击筛选此 Agent' : 'Click to filter by agent'}">${escapeHtml(a)}</span>`).join('、')}</span></div>`);
       else if (d.agent_bound === false) rows.push(`<div class="guide-row"><strong>${currentLang === 'zh' ? '绑定 Agent' : 'Bound Agents'}:</strong> <span>${currentLang === 'zh' ? '未绑定当前 Agent' : 'Not bound to current agent'}</span></div>`);
-      if (d.type !== "skill") rows.push(`<div class="guide-row"><strong>${currentLang === 'zh' ? '类型' : 'Type'}:</strong> <span class="filter-chip" onclick="setPlatFilter({type:'entity',value:'${d.type}'})" title="${currentLang === 'zh' ? '点击筛选此类型' : 'Click to filter by type'}">${d.type}</span></div>`);
+      if (d.type !== "skill") rows.push(`<div class="guide-row"><strong>${currentLang === 'zh' ? '类型' : 'Type'}:</strong> <span class="filter-chip" onclick="setTypeFilter('${d.type}')" title="${currentLang === 'zh' ? '点击切换到此类型视图' : 'Click to switch to this type view'}">${d.type}</span></div>`);
       rows.push(`<div class="guide-row"><strong>${currentLang === 'zh' ? '可见性' : 'Visibility'}:</strong> <span>${visTxt}</span></div>`);
       return `<div>
         <div class="section-label"><span>${currentLang === 'zh' ? '归属与口径' : 'Ownership & Visibility'}</span></div>
@@ -1720,36 +1753,57 @@ function renderInspector(d) {
 }
 
 // Category Filter Handling
+// 视图类型归属唯一函数：连接器与 MCP 分开口径（is_connector 的条目无论 type 归连接器）
+function nodeViewType(n) {
+  if (n.is_connector || n.type === "connector") return "connector";
+  if (n.is_agent || n.type === "agent") return "agent";
+  return n.type === "mcp" ? "mcp" : "skill";
+}
+function nodeTypeMatches(n, key) { return key === "all" ? true : nodeViewType(n) === key; }
+function platLabel(v) { return v === "__unlabeled__" ? t("plat_unlabeled") : v; }
+// 节点是否被当前口径隐藏（节点显示与空视图计数共用同一判定，避免两处口径漂移）
+function nodeHiddenByFilter(d, showExcluded) {
+  if (currentFilter === "excluded") return !d.excluded; // 已排除口径是显式审计意图，不受"显示已排除"开关限制
+  if (d.excluded && !showExcluded) return true;
+  if (currentFilter !== "all" && !nodeTypeMatches(d, currentFilter)) return true;
+  if (currentPlat && currentFilter !== "excluded" && currentFilter !== "all" && nodeTypeMatches(d, currentFilter)) {
+    if (currentPlat.type === "platform" && _platOf(d) !== platLabel(currentPlat.value)) return true;
+    if (currentPlat.type === "agent" && !(d.agents || []).includes(currentPlat.value)) return true;
+  }
+  return false;
+}
 function applyCategoryFilter() {
   const showExcluded = document.getElementById("toggleExcluded").checked;
   const q = document.getElementById("searchInput").value.trim().toLowerCase();
 
-  nodeElements.style("display", d => {
-    if (d.excluded && !showExcluded) return "none";
-    if (currentFilter === "ready" && (d.visibility || "ready") !== "ready") return "none";
-    if (currentFilter === "skill" && d.type !== "skill") return "none";
-    if (currentFilter === "mcp" && d.type !== "mcp") return "none";
-    if (currentFilter === "excluded" && !d.excluded) return "none";
-    if (currentPlat && currentFilter !== "excluded" && d.type === "skill") { // MCP=环境级工具跨平台可见；已排除口径独立审计
-      if (currentPlat.type === "platform" && d.type === "skill" && _platOf(d) !== (currentPlat.value === "__unlabeled__" ? t("plat_unlabeled") : currentPlat.value)) return "none";
-      if (currentPlat.type === "agent" && d.type === "skill" && !(d.agents || []).includes(currentPlat.value)) return "none";
-      if (currentPlat.type === "entity" && d.type !== currentPlat.value) return "none";
-    }
-    return "";
-  });
+  nodeElements.style("display", d => nodeHiddenByFilter(d, showExcluded) ? "none" : "");
 
   linkElements.style("display", d => {
     const sNode = d.source.id ? d.source : nodeMap.get(d.source);
     const tNode = d.target.id ? d.target : nodeMap.get(d.target);
     const sEx = sNode ? sNode.excluded : false;
     const tEx = tNode ? tNode.excluded : false;
-    if ((sEx || tEx) && !showExcluded) return "none";
-    if (currentFilter === "ready" && ((sNode.visibility || "ready") !== "ready" || (tNode.visibility || "ready") !== "ready")) return "none";
-    if (currentFilter === "skill" && (sNode.type !== "skill" || tNode.type !== "skill")) return "none";
-    if (currentFilter === "mcp" && (sNode.type !== "mcp" || tNode.type !== "mcp")) return "none";
-    if (currentFilter === "excluded" && (!sEx && !tEx)) return "none";
+    if (currentFilter === "excluded") {
+      if (!sEx && !tEx) return "none"; // 已排除口径：两端至少一端被排除
+    } else {
+      if ((sEx || tEx) && !showExcluded) return "none";
+      if (currentFilter !== "all") {
+        if (!sNode || !tNode || !nodeTypeMatches(sNode, currentFilter) || !nodeTypeMatches(tNode, currentFilter)) return "none";
+        if (currentPlat) {
+          const okEnd = n => n && (currentPlat.type === "platform" ? _platOf(n) === platLabel(currentPlat.value) : (n.agents || []).includes(currentPlat.value));
+          if (!okEnd(sNode) || !okEnd(tNode)) return "none";
+        }
+      }
+    }
     return "";
   });
+
+  // 口径空视图提示（例：当前环境连接器全部处于已排除审计口径）
+  if (!rawNodes.some(n => !nodeHiddenByFilter(n, showExcluded))) {
+    showToast(currentLang === "zh"
+      ? "该口径下没有可见条目：试试 ✕ 清除平台筛选，或勾选「显示已排除技能」"
+      : "No visible items here: try ✕ to clear the platform filter, or enable 'Show Excluded Skills'");
+  }
 
   // Apply search query opacity if query exists
   if (q) {
@@ -1846,23 +1900,25 @@ document.getElementById("btnToggleSim").addEventListener("click", function() {
   }
 });
 
-// Filter Buttons
+// ── 顶部过滤器：点击切换口径；技能/MCP/连接器 chip 悬停出平台下拉，
+//    平台行悬停右弹 Agent 子列表；单平台也照常显示、默认选中 ──
+function setTypeFilter(f) {
+  document.querySelectorAll(".filter-btn").forEach(b => b.classList.toggle("active", b.getAttribute("data-filter") === f));
+  currentFilter = f;
+  // 平台筛选在新口径下无归属节点时自动清除，避免叠加出空视图
+  if (currentPlat && f !== "excluded" && f !== "all") {
+    const ok = n => !n.excluded && nodeTypeMatches(n, f) &&
+      (currentPlat.type === "platform" ? _platOf(n) === platLabel(currentPlat.value) : (n.agents || []).includes(currentPlat.value));
+    if (!rawNodes.some(ok)) setPlatFilter(null);
+  }
+  applyCategoryFilter();
+}
 document.querySelectorAll(".filter-btn").forEach(btn => {
-  if (!btn.getAttribute("data-filter")) return; // 平台 pill 是下拉触发器，不参与口径切换
-  btn.addEventListener("click", function() {
-    document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
-    this.classList.add("active");
-    currentFilter = this.getAttribute("data-filter");
-    if (currentPlat) setPlatFilter(null); // 切换口径时清平台过滤，避免叠加出空视图
-    applyCategoryFilter();
-  });
+  if (!btn.getAttribute("data-filter")) return; // ✕ 清除按钮无 data-filter，走自身 onclick
+  btn.addEventListener("click", function() { setTypeFilter(this.getAttribute("data-filter")); });
 });
 
-// Excluded & Labels Toggles
-
-// ── 平台/智能体选择器：平台树从节点数据聚合；点平台=该平台全量技能，
-//    hover 右弹 agent 子列表，点 agent=该 agent 绑定的技能 ──
-let currentPlat = null; // null=全量 | {type:"platform"|"agent", value}
+// 归属判定唯一真源：inspector chips、节点过滤、平台树聚合全部经此函数，不得内联归属逻辑
 function _platOf(d) {
   if (d.platform) return d.platform;
   if (d.agents && d.agents.length) return d.agents[0];
@@ -1877,17 +1933,122 @@ function _platOf(d) {
   }
   return t("plat_unlabeled");
 }
-// 节点驱动的平台/Agent 筛选：inspector 里的 filter-chip 触发，清除按钮在筛选排尾部
-function setPlatFilter(f) {
+
+// 平台树聚合：与节点过滤共用同一归属函数 _platOf（含 variant_of 继承），口径绝不漂移
+function buildPlatformTree(typeKey) {
+  const tree = new Map(); // 归属值 -> {value, label, count, agents:Map}
+  rawNodes.forEach(n => {
+    if (n.excluded || !nodeTypeMatches(n, typeKey)) return;
+    const label = _platOf(n);
+    const val = label === t("plat_unlabeled") ? "__unlabeled__" : label;
+    if (!tree.has(val)) tree.set(val, { value: val, label: label, count: 0, agents: new Map() });
+    const row = tree.get(val);
+    row.count++;
+    (n.agents || []).forEach(a => row.agents.set(a, (row.agents.get(a) || 0) + 1));
+  });
+  return [...tree.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+}
+
+let currentPlat = null; // null=全量 | {type:"platform"|"agent", value}
+const platMenu = document.getElementById("platMenu");
+let platMenuType = null, platMenuChip = null;
+
+function renderPlatMenu(typeKey) {
+  const rows = buildPlatformTree(typeKey);
+  const selPlat = currentPlat && currentPlat.type === "platform" ? currentPlat.value : null;
+  const selAgent = currentPlat && currentPlat.type === "agent" ? currentPlat.value : null;
+  if (!rows.length) {
+    platMenu.innerHTML = `<div class="plat-row disabled">${escapeHtml(t("plat_empty"))}</div>`;
+    return;
+  }
+  let html = "";
+  if (rows.length > 1) {
+    html += `<div class="plat-row ${selPlat || selAgent ? "" : "selected"}" data-plat="">${escapeHtml(t("plat_all"))}</div>`;
+  }
+  html += rows.map(r => {
+    const sel = selPlat === r.value;
+    const agents = [...r.agents.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const fly = agents.length ? `
+        <div class="agent-flyout">
+          <div class="plat-row ${sel && !selAgent ? "selected" : ""}" data-plat="${escapeHtml(r.value)}">${escapeHtml(t("plat_all"))}</div>
+          ${agents.map(([a, c]) => `<div class="plat-row ${selAgent === a ? "selected" : ""}" data-agent="${escapeHtml(a)}">${escapeHtml(a)}<span class="cnt">${c}</span></div>`).join("")}
+        </div>` : "";
+    return `<div class="plat-row ${sel ? "selected" : ""}" data-plat="${escapeHtml(r.value)}">${escapeHtml(r.label)}<span class="cnt">${r.count}</span>${agents.length ? '<span class="arrow">▸</span>' : ""}${fly}</div>`;
+  }).join("");
+  platMenu.innerHTML = html;
+}
+
+function showPlatMenu(chip) {
+  const typeKey = chip.getAttribute("data-filter");
+  if (!typeKey || ["all", "excluded"].includes(typeKey)) return; // 全部/已排除不挂平台下拉
+  if (platMenuChip === chip && platMenu.classList.contains("show")) return; // 同 chip 已展开，避免重渲染闪烁
+  platMenuChip = chip;
+  platMenuType = typeKey;
+  renderPlatMenu(typeKey);
+  platMenu.classList.add("show");
+  const r = chip.getBoundingClientRect();
+  platMenu.style.top = (r.bottom + 6) + "px";
+  platMenu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - platMenu.offsetWidth - 8)) + "px";
+}
+function hidePlatMenu() { platMenu.classList.remove("show"); platMenuType = null; platMenuChip = null; }
+
+// Agent 飞出的 JS 驱动：mouseover 委托在容器上（innerHTML 重渲染也存活）。
+// 纯 CSS :hover 在合成/触控输入下不稳定，.open 类做双保险
+platMenu.addEventListener("mouseover", e => {
+  const t = e.target.closest(".plat-row");
+  platMenu.querySelectorAll(".plat-row.open").forEach(r => { if (!t || !r.contains(t)) r.classList.remove("open"); });
+  if (!t) return;
+  const host = t.closest(".agent-flyout") ? t.closest(".agent-flyout").closest(".plat-row")
+            : (t.querySelector(":scope > .agent-flyout") ? t : null);
+  if (host) host.classList.add("open");
+});
+
+document.querySelectorAll(".filter-btn.has-menu").forEach(chip => {
+  chip.addEventListener("mouseenter", () => showPlatMenu(chip));
+});
+// 悬停保持判定：光标既不在触发 chip 也不在菜单内才收起。
+// 不用 mouseleave+定时器——边界事件在真实/合成输入下都会抖，定时器误触发导致菜单闪烁
+document.addEventListener("mousemove", e => {
+  if (!platMenu.classList.contains("show")) return;
+  const t = e.target;
+  if (platMenu.contains(t)) return;
+  if (platMenuChip && platMenuChip.contains(t)) return;
+  hidePlatMenu();
+});
+window.addEventListener("resize", hidePlatMenu);
+
+// 下拉点击：平台行=该平台全量条目；Agent 行=该平台下绑定该 Agent 的条目；全部平台=清除平台筛选
+platMenu.addEventListener("click", e => {
+  const row = e.target.closest(".plat-row");
+  if (!row || row.classList.contains("disabled")) return;
+  if (row.dataset.agent !== undefined) {
+    setTypeFilter(platMenuType);
+    setPlatFilter({type: "agent", value: row.dataset.agent});
+  } else if (row.dataset.plat !== undefined) {
+    setTypeFilter(platMenuType);
+    setPlatFilter(row.dataset.plat ? {type: "platform", value: row.dataset.plat} : null);
+  }
+  hidePlatMenu();
+});
+
+// 平台/Agent 筛选状态（inspector filter-chip 与顶部下拉共用）；✕ 清除按钮在筛选排尾部
+function setPlatFilter(f, viewType) {
   currentPlat = f;
+  if (f && viewType) setTypeFilter(viewType); // 从 inspector 跳转时口径对齐到该节点的视图
   const cb = document.getElementById("clearPlatBtn");
   if (cb) { cb.style.display = f ? "" : "none"; cb.classList.toggle("active", !!f); }
   applyCategoryFilter();
 }
-// 打开面板默认定位到本平台（登记表声明的当前智能体）
+
+// Excluded & Labels Toggles
+
+// 打开面板默认定位到本平台（登记表声明的当前智能体）：默认口径=技能+该平台，
+// chip 激活态与 ✕ 可见性和实际筛选一致，不静默；无身份声明时才是真正的"全部"
+setTypeFilter(currentFilter);
 if (currentAgentIdentity) {
-  const _platOfAll = rawNodes.filter(n => !n.excluded && n.type === "skill").map(_platOf);
-  if (_platOfAll.includes(currentAgentIdentity)) {
+  const _platSet = new Set(rawNodes.filter(n => !n.excluded && n.type === "skill").map(_platOf));
+  if (_platSet.has(currentAgentIdentity)) {
+    setTypeFilter("skill");
     setPlatFilter({type: "platform", value: currentAgentIdentity});
   }
 }
