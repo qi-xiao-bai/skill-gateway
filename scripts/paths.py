@@ -457,7 +457,7 @@ def _save_env_roots_memory(agent_name, roots):
     p = os.path.join(ROOT, "inputs", "env_skill_roots.json")
     os.makedirs(os.path.dirname(p), exist_ok=True)
     data = _load_env_roots_memory()
-    data[agent_name] = list(roots)
+    data[agent_name] = list(dict.fromkeys(roots))  # 保序去重（重复声明不堆积）
     tmp = p + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
@@ -517,6 +517,8 @@ LEGACY_OUTPUT_FILES = [
     "hit-ledger.jsonl",
     # pack 构建产物（源目录里的交付 zip）
     "skill-gateway.zip",
+    # 翻译 API 缓存（translate.py，可再生）
+    ".translate-cache.json",
 ]
 
 # clean 的目录级清扫名单（编译缓存 + 会话工具残留）；源码目录绝不在此列

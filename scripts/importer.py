@@ -182,7 +182,7 @@ def to_available_list(items, agent_name=None, old_doc=None):
         old = old_map.get(name.lower(), {})
         rec = {"name": name}
         for k in ("description", "desc", "summary", "triggers", "path",
-                  "status", "category", "platform"):
+                  "status", "category", "platform", "description_zh"):
             v = it.get(k)
             if v in (None, ""):
                 v = old.get(k)

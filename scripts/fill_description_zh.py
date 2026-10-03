@@ -70,10 +70,19 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="只预览要做的改动，不写文件")
     a = ap.parse_args()
 
-    entries = [e for e in scanner.scan_skills() if e.get("type") == "skill"]
+    entries = None
+    try:
+        import index_store
+        entries = [e for e in (index_store.load_index() or [])
+                   if e.get("type") == "skill" and not e.get("excluded")]
+    except Exception:
+        entries = None
+    if not entries:
+        entries = [e for e in scanner.scan_skills() if e.get("type") == "skill"]
     if a.export:
+        # 口径 = 索引可见条目（off-list/blocked 不进待译清单——它们不在检索面）
         todo = {
-            e["name"]: {"description": e.get("description", ""), "path": e["path"]}
+            e["name"]: {"description": e.get("description", ""), "path": e.get("path", "")}
             for e in entries if not e.get("description_zh")
         }
         with open(a.export, "w", encoding="utf-8") as f:

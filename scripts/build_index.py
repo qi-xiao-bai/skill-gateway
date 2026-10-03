@@ -178,8 +178,50 @@ def cmd_agent_index(a):
             )
         print(f"[agent-index] 自助模式：按环境挂载根 {env_dirs} 圈定，发现 {len(raw)} 项技能")
 
+    # 翻译回传（动态翻译闭环）：调用方 agent 生成的中文描述，网关写入登记表
+    _zh = {}
+    if getattr(a, "desc_zh", ""):
+        try:
+            _zh.update(json.loads(a.desc_zh))
+        except Exception as ex:
+            _miss(f"[agent-index] --desc-zh 不是合法 JSON: {ex}")
+    if getattr(a, "desc_zh_file", ""):
+        try:
+            with open(a.desc_zh_file, encoding="utf-8") as f:
+                _zh.update(json.load(f))
+        except Exception as ex:
+            _miss(f"[agent-index] --desc-zh-file 读取失败: {ex}")
+
     # 合并语义：agents 并集、未导入条目原样保留（共享清单属于所有智能体环境）
     doc = importer_mod.to_available_list(raw, agent_name, scanner_mod.available_list_doc())
+    if _zh:
+        _applied = 0
+        for _name, _zhv in _zh.items():
+            for _it in doc.get("skills", []):
+                if _it.get("name", "").lower() == str(_name).strip().lower():
+                    _it["description_zh"] = str(_zhv).strip()
+                    _applied += 1
+                    break
+        print(f"[agent-index] 已写入 {_applied} 条中文描述到登记表")
+    # 动态翻译闭环：缺中文描述 → 调翻译 API 现场回填（只写登记表，不碰技能库源文件）
+    _need_zh = [it for it in doc.get("skills", [])
+                if agent_name in (it.get("agents") or []) and not it.get("description_zh")]
+    if _need_zh and not getattr(a, "no_translate", False):
+        try:
+            import translate as _tr
+            _ok, _fail = _tr.translate_missing(_need_zh, agent_name)
+            if _ok:
+                print(f"[agent-index] 翻译 API 现场回填中文描述 {_ok} 条"
+                      + (f"（{_fail} 条失败，下次重试）" if _fail else ""))
+            elif _fail:
+                print(f"[agent-index] 翻译 API 不可达/失败 {_fail} 条（登记表保持原文，下次重试）")
+        except Exception as _ex:
+            print(f"[agent-index] 翻译通道异常（不影响索引构建）: {_ex}", file=sys.stderr)
+    _missing_zh = [it["name"] for it in _need_zh if not it.get("description_zh")]
+    if _missing_zh:
+        print(f"[agent-index] {len(_missing_zh)} 条缺中文描述（如: {'、'.join(_missing_zh[:5])}"
+              f"{'…' if len(_missing_zh) > 5 else ''}）。将调用翻译 API 现场生成并写入登记表"
+              f"（不触碰技能库源文件）；也可用 --desc-zh-file 手工回传。")
     index_store.atomic_write(list_path, json.dumps(doc, ensure_ascii=False, indent=2))
     t_list = time.time()
     entries, st = index_store.update_index()
@@ -1379,6 +1421,11 @@ COMMANDS = [
             (("--skill-dirs",), {"help": "声明当前环境的技能挂载根（分号/路径分隔符分隔多个）。"
                                               "调用方 agent 知道自己的平台把技能挂在哪里，直接声明即可——"
                                               "发现扫描根缺失时用这个参数，不要改代码"}),
+            (("--desc-zh",), {"help": "中文描述翻译 JSON（{技能名: 中文描述}）。建索引时对缺译条目"
+                                       "当场生成翻译回传，网关写入登记表——每加一个技能自动翻一个，零人工"}),
+            (("--desc-zh-file",), {"help": "翻译 JSON 文件路径（大量翻译时用，格式同 --desc-zh）"}),
+            (("--no-translate",), {"action": "store_true",
+                                    "help": "关闭翻译 API 现场回填（离线/不想外发时用）"}),
             (("--prune-agent",), {"help": "清除指定智能体的绑定（agents 含该名的条目被移出清单），用于清理误导入"}),
         ],
     },
