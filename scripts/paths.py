@@ -435,6 +435,32 @@ def expand(p):
     return os.path.expanduser(p)
 
 
+ENV_SKILL_DECLARATIONS = (
+    "~/.gemini/config/skills.json",   # Antigravity / Gemini CLI 的技能库声明
+)
+
+
+def discover_env_skill_roots():
+    """发现"当前环境声明"的技能根目录（读平台声明文件，如
+    ~/.gemini/config/skills.json 的 entries[].path）。
+    返回真实存在的目录列表；无法判定返回 []——调用方**不得**在空结果时
+    回退全机器扫描（会把整台机器的技能灌进共享清单）。"""
+    roots = []
+    for rel in ENV_SKILL_DECLARATIONS:
+        p = expand(rel)
+        try:
+            with open(p, encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            continue
+        for it in (data.get("entries") or []):
+            d = it.get("path") if isinstance(it, dict) else it
+            d = expand(str(d or ""))
+            if d and os.path.isdir(d) and os.path.normcase(d) not in {os.path.normcase(x) for x in roots}:
+                roots.append(d)
+    return roots
+
+
 LEGACY_OUTPUT_FILES = [
     "boot.md",
     "catalog.md",

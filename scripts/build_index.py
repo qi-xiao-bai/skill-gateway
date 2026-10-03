@@ -108,17 +108,43 @@ def cmd_agent_index(a):
                 "[agent-index] 没解析出技能项。支持 JSON（list 或 {skills:[...]}，如 skill_follow 的返回）/ 每行 `name: 描述`"
             )
     else:
-        raw = scanner_mod.scan_skills(ignore_list=True)
+        # 自助模式按"环境声明/父目录"圈定挂载集，绝不回退全机器扫描
+        # （全机器灌入会让共享清单被 agents=[default] 的整盘技能污染）
+        env_dirs = paths.discover_env_skill_roots()
+        if not env_dirs:
+            parent = os.path.dirname(paths.ROOT)
+            skill_md_count = sum(
+                1 for _dp, _dn, fn in os.walk(parent)
+                if any(f.lower() == "skill.md" for f in fn)) if os.path.isdir(parent) else 0
+            if skill_md_count >= 2:
+                env_dirs = [parent]
+        if not env_dirs:
+            _miss(
+                "[agent-index] 无法判定当前环境的技能根（未设 SKILL_GATEWAY_SKILL_DIRS，"
+                "也未发现环境声明文件如 ~/.gemini/config/skills.json，父目录亦无技能集）。"
+                "为避免整台机器技能灌入共享清单，本次不写入。"
+                "请设 SKILL_GATEWAY_SKILL_DIRS=<本环境技能目录> 或提供清单文件。")
+        prev_dirs = os.environ.get("SKILL_GATEWAY_SKILL_DIRS")
+        prev_only = os.environ.get("SKILL_GATEWAY_ONLY_DIRS")
+        os.environ["SKILL_GATEWAY_SKILL_DIRS"] = os.pathsep.join(env_dirs)
+        os.environ["SKILL_GATEWAY_ONLY_DIRS"] = "1"
+        try:
+            raw = scanner_mod.scan_skills(ignore_list=True)
+        finally:
+            if prev_dirs is None:
+                os.environ.pop("SKILL_GATEWAY_SKILL_DIRS", None)
+            else:
+                os.environ["SKILL_GATEWAY_SKILL_DIRS"] = prev_dirs
+            if prev_only is None:
+                os.environ.pop("SKILL_GATEWAY_ONLY_DIRS", None)
+            else:
+                os.environ["SKILL_GATEWAY_ONLY_DIRS"] = prev_only
         if not raw:
             _miss(
-                "[agent-index] 当前环境未扫描到任何技能（约定根与广域发现均为空）。"
-                "请提供清单：agent-index <文件|-> [--agent 智能体名]，或用 roots 诊断扫描根。"
+                f"[agent-index] 环境技能根 {env_dirs} 中未发现技能。"
+                "请检查目录内容，或提供清单：agent-index <文件|-> [--agent 智能体名]。"
             )
-        print(f"[agent-index] 自助模式：已发现 {len(raw)} 项技能")
-        if not os.environ.get("SKILL_GATEWAY_SKILL_DIRS") and not paths.only_dirs():
-            print("[agent-index] ⚠ 未设 SKILL_GATEWAY_SKILL_DIRS：以上为**全机器发现量**，"
-                  "含本环境挂载范围外的技能。要精确圈定本环境挂载集，"
-                  "请设 SKILL_GATEWAY_SKILL_DIRS=<本环境技能目录> 后重跑。")
+        print(f"[agent-index] 自助模式：按环境挂载根 {env_dirs} 圈定，发现 {len(raw)} 项技能")
     if not agent_name:
         agent_name = "default"
         print("[agent-index] 未指定 --agent：本环境技能将以 agents=[default] 标注；"
