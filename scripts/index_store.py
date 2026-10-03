@@ -4,6 +4,7 @@
 # updated 2026-09-16 qjl: 索引里固化 ID / 关系边(edges) / 覆盖口径(meta)，供 related/stats/export 复用
 import json
 import os
+import sys
 import tempfile
 import time
 from collections import Counter
@@ -29,8 +30,8 @@ def atomic_write(path, text):
     except BaseException:
         try:
             os.unlink(tmp)
-        except OSError:
-            pass
+        except OSError as _ex:
+            print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
         raise
 
 
@@ -84,8 +85,8 @@ def coverage(entries):
         try:
             with open(p, encoding="utf-8", errors="replace") as f:
                 full_chars += len(f.read())
-        except OSError:
-            pass
+        except OSError as _ex:
+            print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
     return {
         "total": len(entries),
         "skill": n_skill,
@@ -226,8 +227,8 @@ def write_index(entries):
         import reports
         html, _, _, _ = reports.generate_dashboard_html(entries, edges)
         atomic_write(out_path("skill-dashboard.html"), html)
-    except Exception:
-        pass
+    except Exception as _ex:
+        print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
 
 
 def read_doc():
@@ -714,16 +715,16 @@ def auto_update_on_miss(query="", broad="auto", targeted=True):
             import bundle as _bundle
 
             _bundle.write_bundle(entries, edges)
-        except Exception:
-            pass
+        except Exception as _ex:
+            print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
         ci_path = out_path("skill-content-index.json")
         if os.path.isfile(ci_path):
             try:
                 import content_index as _ci
 
                 _ci.update_content_index(broad)
-            except Exception:
-                pass
+            except Exception as _ex:
+                print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
     return entries, edges, st, has_changes
 
 

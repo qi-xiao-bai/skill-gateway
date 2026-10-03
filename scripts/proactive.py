@@ -50,6 +50,7 @@ def get_roots_fingerprint():
                             if entry.is_dir(follow_symlinks=False):
                                 sub_stat = entry.stat(follow_symlinks=False)
                                 sub_info.append(f"{entry.name}:{int(sub_stat.st_mtime)}")
+                        # 旁路设计：此处静默吞错是有意为之（best-effort，不影响主流程）
                         except OSError:
                             continue
                 sub_summary = (
@@ -60,6 +61,7 @@ def get_roots_fingerprint():
                 parts.append(
                     f"{os.path.normcase(os.path.realpath(rp))}:{int(st.st_mtime)}:{len(sub_info)}:{sub_summary}"
                 )
+            # 旁路设计：此处静默吞错是有意为之（best-effort，不影响主流程）
             except OSError:
                 continue
     raw = "|".join(sorted(parts))
@@ -75,6 +77,7 @@ def load_proactive_state():
                 d = json.load(f)
                 if isinstance(d, dict):
                     return d
+        # 旁路设计：此处静默吞错是有意为之（best-effort，不影响主流程）
         except Exception:
             pass
     return {
@@ -98,6 +101,7 @@ def save_proactive_state(state):
             p, json.dumps(state, ensure_ascii=False, indent=2)
         )
         return True
+    # 旁路设计：此处静默吞错是有意为之（best-effort，不影响主流程）
     except Exception:
         return False
 

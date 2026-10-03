@@ -45,6 +45,7 @@ def record_event(kind, query, hits, extra=None):
         with open(p, "a", encoding="utf-8") as f:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
         _maybe_truncate(p)
+    # 旁路设计：此处静默吞错是有意为之（best-effort，不影响主流程）
     except Exception:
         pass
 
@@ -58,6 +59,7 @@ def _maybe_truncate(p):
         with open(p + ".tmp", "w", encoding="utf-8") as f:
             f.writelines(lines[-int(len(lines) * KEEP_RATIO):])
         os.replace(p + ".tmp", p)
+    # 旁路设计：此处静默吞错是有意为之（best-effort，不影响主流程）
     except Exception:
         pass
 

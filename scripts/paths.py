@@ -6,6 +6,7 @@
 import fnmatch
 import json
 import os
+import sys
 import re
 
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -416,8 +417,8 @@ try:  # 再加一层保险：本机临时目录
     import tempfile as _tf
 
     _SELF_SKIP.add(os.path.normcase(os.path.normpath(_tf.gettempdir())).lower())
-except Exception:
-    pass
+except Exception as _ex:
+    print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
 
 
 def expand(p):
@@ -504,10 +505,10 @@ def migrate_legacy_outputs():
                     if os.path.exists(new_p):
                         os.remove(new_p)
                     os.rename(old_p, new_p)
-                except Exception:
-                    pass
-    except Exception:
-        pass
+                except Exception as _ex:
+                    print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
+    except Exception as _ex:
+        print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
 
 
 def out_path(name):
@@ -633,8 +634,8 @@ def dynamic_mcp_search_roots():
             if p not in seen and os.path.isdir(p):
                 seen.add(p)
                 roots.append(p)
-        except Exception:
-            pass
+        except Exception as _ex:
+            print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
 
     # 1. 技能自身目录及其祖先（自身相对，适应任意解压部署路径）
     curr = ROOT
@@ -702,8 +703,8 @@ def discover_mcp_resources():
             if k not in seen_cfgs and os.path.isfile(k):
                 seen_cfgs.add(k)
                 out_cfgs.append(p)
-        except Exception:
-            pass
+        except Exception as _ex:
+            print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
 
     def add_d(d):
         if not d:
@@ -713,8 +714,8 @@ def discover_mcp_resources():
             if k not in seen_dirs and os.path.isdir(k):
                 seen_dirs.add(k)
                 out_dirs.append(d)
-        except Exception:
-            pass
+        except Exception as _ex:
+            print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
 
     agent_keywords = (
         "claude",

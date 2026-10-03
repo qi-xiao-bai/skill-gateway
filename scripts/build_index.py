@@ -76,8 +76,6 @@ def cmd_agent_index(a):
     并立即重建索引、dashboard 与内容索引。
     不带清单参数 = 自助模式：直接扫描当前环境已挂载技能（约定根+广域发现）并入
     共享清单——跑完即用，不反问、不解释。平台有导出文件时再走文件导入。"""
-    import shutil as _shutil
-
     t0 = time.time()
     agent_name = (a.agent or "").strip() or         (os.environ.get("SKILL_GATEWAY_AGENT") or "").strip()
     list_path = os.path.join(paths.ROOT, "inputs", "available_skills.json")
@@ -134,8 +132,8 @@ def cmd_agent_index(a):
     t_idx = time.time()
     try:
         bundle_mod.write_bundle(entries, index_store.read_edges() or [])
-    except Exception:
-        pass
+    except Exception as _ex:
+        print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
     if getattr(a, "content", False):
         try:
             ci.update_content_index("auto")
@@ -441,7 +439,7 @@ def cmd_search(a):
         "pipeline",
     )
     if any(k in a.query.lower() for k in task_keywords):
-        print(f"\n[skill-gateway] 复合工程任务建议用 pipeline 生成多技能流水线:")
+        print("\n[skill-gateway] 复合工程任务建议用 pipeline 生成多技能流水线:")
         print(f'  python scripts/build_index.py pipeline "{a.query}"')
 
     best_hit = hits[0][1]["name"] if hits else "无"
@@ -511,8 +509,8 @@ def cmd_explain(a):
     if e.get("triggers"):
         print(f"- 触发词：{'、'.join(e['triggers'])}")
     else:
-        print(f"- 触发词：（描述里未显式给出，按描述语义/技能名触发）")
-    print(f"- 何时用：看上面描述里的「何时用」；一般为描述中写的触发场景。")
+        print("- 触发词：（描述里未显式给出，按描述语义/技能名触发）")
+    print("- 何时用：看上面描述里的「何时用」；一般为描述中写的触发场景。")
     print(f"- 触发方式：直接用技能名「{e['name']}」触发，或在数字员工里检索该名。")
     print(f"- 位置：{e['path']}")
     if e["has_references"]:
@@ -520,7 +518,7 @@ def cmd_explain(a):
             f"- 注意：含 references/scripts/assets，按需用 detail 加载全文，避免一股脑全读拖慢速度。"
         )
     else:
-        print(f"- 体积：无大体积参考文件，可放心直接调用。")
+        print("- 体积：无大体积参考文件，可放心直接调用。")
 
 
 def cmd_related(a):
@@ -637,16 +635,16 @@ def cmd_dashboard(a):
                 shutil.copy2(out_file, dl_file)
                 dl_copied = dl_file
                 print(f"  [下载就绪] 已同步副本至系统下载目录: {dl_file}")
-            except Exception:
-                pass
+            except Exception as _ex:
+                print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
 
     # 2. 显式 --open：唤起默认浏览器
     if a.open_browser:
         try:
             if webbrowser.open(os.path.abspath(out_file)):
                 print("  [浏览器] 已在默认浏览器中打开图谱面板")
-        except Exception:
-            pass
+        except Exception as _ex:
+            print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
 
     # 3. 交付信息卡
     print("\n--- [交付链接] ---")
@@ -927,7 +925,7 @@ def cmd_content_find(a):
         print(f"        摘要: {ch['summary']}")
         print(f"        命中: {', '.join(matched[:10])}")
     if a.full:
-        print(f"\n## 全文片段\n")
+        print("\n## 全文片段\n")
         # 按条目名（frontmatter 名）映射目录；投喂 chunk 自带 src_dir，read_chunk_text 优先用之
         skill_dir_map = {
             e["name"]: e.get("path", "")
@@ -1047,8 +1045,8 @@ def cmd_profile(a):
         try:
             proactive.sync_memory_markdown(prof)
             print("[profile] 已同步活跃记忆到 output/memory.md")
-        except Exception:
-            pass
+        except Exception as _ex:
+            print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
 
     set_roots = a.set_roots
     add_roots = [a.add_root] if a.add_root else None
@@ -1084,12 +1082,12 @@ def cmd_profile(a):
         print("[profile] 已同步活跃记忆到 output/memory.md")
 
     # 显示当前配置摘要
-    print(f"# 用户重要指令与技能画像 (Profile)")
+    print("# 用户重要指令与技能画像 (Profile)")
     print(
         f"配置文件: {prof_path} ({'已存在' if os.path.isfile(prof_path) else '未创建，可用 --init 创建'})\n"
     )
 
-    print(f"## 1. 扫描根控制")
+    print("## 1. 扫描根控制")
     fixed_roots = prof.get("fixed_roots", [])
     only_fixed_val = prof.get("only_fixed_roots", False)
     print(
@@ -1099,7 +1097,7 @@ def cmd_profile(a):
         f"- 严格扫描模式 (only_fixed_roots): {'开启（仅扫固定目录，等价 ONLY_DIRS=1）' if only_fixed_val else '未开启（融合自身相对与默认目录）'}\n"
     )
 
-    print(f"## 2. 常用技能与 MCP 偏好")
+    print("## 2. 常用技能与 MCP 偏好")
     pinned_skills = prof.get("pinned_skills", [])
     pinned_mcps = prof.get("pinned_mcps", [])
     print(
@@ -1109,13 +1107,13 @@ def cmd_profile(a):
         f"- 常用 MCP ({len(pinned_mcps)} 个): {', '.join(pinned_mcps) if pinned_mcps else '无'}\n"
     )
 
-    print(f"## 3. 排除规则黑名单")
+    print("## 3. 排除规则黑名单")
     excludes = prof.get("exclude_skills", [])
     print(
         f"- 排除规则 ({len(excludes)} 条): {', '.join(excludes) if excludes else '无'}\n"
     )
 
-    print(f"## 4. 用户全局重要指令 (User Directives)")
+    print("## 4. 用户全局重要指令 (User Directives)")
     directives = prof.get("user_directives", [])
     if directives:
         for idx, d in enumerate(directives, 1):
@@ -1126,14 +1124,14 @@ def cmd_profile(a):
 
     quota = prof.get("retrieval_quota", {})
     if quota:
-        print(f"## 5. 检索容量与打分偏好")
+        print("## 5. 检索容量与打分偏好")
         print(f"- 默认 Top-K: {quota.get('top_k', 8)}")
         print(f"- 最低阈值分 (min_score): {quota.get('min_score', 0.35)}")
         print(f"- 常用技能加权分 (favorite_boost): +{quota.get('favorite_boost', 3.0)}")
 
     pro_cfg = proactive.get_proactive_config()
     pro_state = proactive.load_proactive_state()
-    print(f"\n## 6. 自适应进化与主动更新 (Self-Improving Agent)")
+    print("\n## 6. 自适应进化与主动更新 (Self-Improving Agent)")
     print(f"- 智能更新机制: {'已开启' if pro_cfg.get('enabled') else '已关闭'}")
     print(f"- 心跳轮询周期: {pro_cfg.get('interval_seconds')} 秒")
     print(f"- 累计交互记录: {pro_state.get('interaction_count', 0)} 次")
@@ -1212,8 +1210,8 @@ def cmd_clean(a):
         try:
             shutil.rmtree(mirror, ignore_errors=True)
             cleaned.append("inputs/platform_mirror")
-        except Exception:
-            pass
+        except Exception as _ex:
+            print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
 
     # 3. 清理 Python 编译缓存
     for root, dirs, _files in os.walk(paths.ROOT):
@@ -1223,8 +1221,8 @@ def cmd_clean(a):
                 try:
                     shutil.rmtree(target_dir, ignore_errors=True)
                     cleaned.append(os.path.relpath(target_dir, paths.ROOT))
-                except Exception:
-                    pass
+                except Exception as _ex:
+                    print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
 
     print(
         f"[clean] 清理完成！共清理 {len(cleaned)} 项运行时产物与缓存，技能包已恢复为纯净源数据状态。"
@@ -1591,8 +1589,8 @@ def main():
     for _s in (sys.stdout, sys.stderr):
         try:
             _s.reconfigure(encoding="utf-8", errors="replace")
-        except Exception:
-            pass
+        except Exception as _ex:
+            print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
 
     p = _build_parser()
     args = p.parse_args()

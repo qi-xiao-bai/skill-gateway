@@ -95,6 +95,7 @@ def _is_binary_file(path):
         with open(path, "rb") as f:
             chunk = f.read(8192)
         return b"\x00" in chunk
+    # 旁路设计：此处静默吞错是有意为之（best-effort，不影响主流程）
     except OSError:
         return False
 

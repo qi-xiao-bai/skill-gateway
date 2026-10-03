@@ -5,6 +5,7 @@
 # updated 2026-09-16 qjl: 跳过规则改走 .skillignore（内建默认为原 SKIP_DIRS，行为不变）
 import json
 import os
+import sys
 import re
 
 import skillmd
@@ -154,8 +155,8 @@ def available_list_agent():
         v = str(paths.load_skill_profile().get("current_agent") or "").strip()
         if v:
             return v
-    except Exception:
-        pass
+    except Exception as _ex:
+        print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
     return None
 
 
@@ -379,8 +380,8 @@ def _find_adjacent_artifact_info(base_dir: str, target_name: str = ""):
                 if desc:
                     trigs = skillmd.extract_triggers(desc)
                     return desc, [], trigs
-            except Exception:
-                pass
+            except Exception as _ex:
+                print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
 
     # 2. 探测 manifest.json / package.json / connector.json / agent.json
     for manifest_name in ("connector.json", "manifest.json", "agent.json", "package.json"):
@@ -395,8 +396,8 @@ def _find_adjacent_artifact_info(base_dir: str, target_name: str = ""):
                     trigs = mdata.get("triggers") or mdata.get("keywords") or mdata.get("tags") or []
                     if desc:
                         return desc, [], trigs
-            except Exception:
-                pass
+            except Exception as _ex:
+                print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
 
     # 3. 探测 instructions.md / README.md（提取首段或标题作为自省摘要）
     for doc_name in ("instructions.md", "README.md", "readme.md"):
@@ -409,8 +410,8 @@ def _find_adjacent_artifact_info(base_dir: str, target_name: str = ""):
                     l_s = l.strip().lstrip("#").strip()
                     if l_s and not l_s.startswith("[") and not l_s.startswith("!") and len(l_s) > 6:
                         return l_s, [], []
-            except Exception:
-                pass
+            except Exception as _ex:
+                print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
 
     return "", [], []
 

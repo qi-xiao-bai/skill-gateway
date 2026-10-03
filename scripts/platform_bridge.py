@@ -122,6 +122,7 @@ def read_manifest(mirror):
     try:
         with open(p, encoding="utf-8") as f:
             return json.load(f)
+    # 旁路设计：此处静默吞错是有意为之（best-effort，不影响主流程）
     except Exception:
         return None
 
@@ -145,6 +146,7 @@ def raw_items(text):
     """尽量保留原始清单项（parse_source 只给 name/description，保真还需要原始字段）。"""
     try:
         data = json.loads(text)
+    # 旁路设计：此处静默吞错是有意为之（best-effort，不影响主流程）
     except Exception:
         return None
     if isinstance(data, dict):
