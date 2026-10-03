@@ -1746,7 +1746,7 @@ function applyCategoryFilter() {
     if (currentFilter === "skill" && d.type !== "skill") return "none";
     if (currentFilter === "mcp" && d.type !== "mcp") return "none";
     if (currentFilter === "excluded" && !d.excluded) return "none";
-    if (currentPlat && currentFilter !== "excluded") { // 已排除口径独立审计，不叠平台过滤
+    if (currentPlat && currentFilter !== "excluded" && d.type === "skill") { // MCP=环境级工具跨平台可见；已排除口径独立审计
       if (currentPlat.type === "platform" && _platOf(d) !== (currentPlat.value === "__unlabeled__" ? t("plat_unlabeled") : currentPlat.value)) return "none";
       if (currentPlat.type === "agent" && !(d.agents || []).includes(currentPlat.value)) return "none";
     }
@@ -1884,7 +1884,7 @@ function _platOf(d) {
 function buildPlatformTree() {
   const tree = {};
   rawNodes.forEach(d => {
-    if (d.excluded) return;
+    if (d.excluded || d.type !== "skill") return; // MCP/连接器=环境级工具，不进平台组
     const plat = d.platform || (d.agents && d.agents.length ? d.agents[0] : "__unlabeled__");
     tree[plat] = tree[plat] || { count: 0, agents: new Set() };
     tree[plat].count++;
