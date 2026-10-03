@@ -121,8 +121,12 @@ def cmd_agent_index(a):
     else:
         # 自助模式按"环境声明/父目录"圈定挂载集，绝不回退全机器扫描
         # （全机器灌入会让共享清单被 agents=[default] 的整盘技能污染）
-        env_dirs = paths.discover_env_skill_roots()
+        env_dirs = [d for d in paths.discover_env_skill_roots()
+                    if os.path.normcase(paths.ROOT).startswith(os.path.normcase(d) + os.sep)
+                    or os.path.normcase(paths.ROOT) == os.path.normcase(d)]
         if not env_dirs:
+            # 声明文件是机器级的，但只对"本副本确实住在该声明库里"时生效
+            # （其他位置的副本不被别人的声明误圈定）
             parent = os.path.dirname(paths.ROOT)
             skill_md_count = sum(
                 1 for _dp, _dn, fn in os.walk(parent)
