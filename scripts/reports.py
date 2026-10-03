@@ -382,15 +382,18 @@ def generate_dashboard_html(entries, edges):
         etype = e.get("type", "skill")
         is_conn = bool(e.get("is_connector") or etype == "connector")
         is_ag = bool(e.get("is_agent") or etype == "agent")
-        if is_ag:
-            n_agents += 1
-        elif is_conn:
-            n_connectors += 1
-            n_mcps += 1
-        elif etype == "mcp":
-            n_mcps += 1
-        else:
-            n_skills += 1
+        # 顶栏统计只计可见口径（与检索/编排一致）；excluded（off-list/blocked）
+        # 的节点仍进图（由 Show Excluded 开关审计），但不冒充可见技能数
+        if not e.get("excluded"):
+            if is_ag:
+                n_agents += 1
+            elif is_conn:
+                n_connectors += 1
+                n_mcps += 1
+            elif etype == "mcp":
+                n_mcps += 1
+            else:
+                n_skills += 1
 
         nodes.append({
             "id": nid,
