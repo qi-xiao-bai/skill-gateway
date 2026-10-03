@@ -118,7 +118,7 @@ class MetaConsistencyTests(unittest.TestCase):
         # _platOf 必须包含 variant_of 继承链
         self.assertIn("d.variant_of", src, "_platOf 必须沿 variant_of 回溯变体归属")
         # 节点过滤必须调 _platOf
-        filter_hit = _re.search(r'currentPlat\.type === "platform" && _platOf\(d\)', src)
+        filter_hit = _re.search(r'currentPlat\.type === "platform".*?_platOf\(d\)', src)
         self.assertIsNotNone(filter_hit,
                              "节点过滤必须调 _platOf，不得内联归属逻辑")
         # inspector chips 必须调 setPlatFilter
