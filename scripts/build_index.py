@@ -145,10 +145,6 @@ def cmd_agent_index(a):
                 "请检查目录内容，或提供清单：agent-index <文件|-> [--agent 智能体名]。"
             )
         print(f"[agent-index] 自助模式：按环境挂载根 {env_dirs} 圈定，发现 {len(raw)} 项技能")
-    if not agent_name:
-        agent_name = "default"
-        print("[agent-index] 未指定 --agent：本环境技能将以 agents=[default] 标注；"
-              "建议 --agent <环境名> 便于多环境区分。")
 
     # 合并语义：agents 并集、未导入条目原样保留（共享清单属于所有智能体环境）
     doc = importer_mod.to_available_list(raw, agent_name, scanner_mod.available_list_doc())
