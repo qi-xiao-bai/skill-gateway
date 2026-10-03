@@ -1926,7 +1926,9 @@ function renderPlatformMenu() {
     li.onclick = () => onClick();
     return li;
   };
-  menu.appendChild(mk(t("plat_all"), rawNodes.filter(d=>!d.excluded).length, null,
+  const _skillCount = rawNodes.filter(d => !d.excluded && d.type === "skill").length;
+  const _mcpCount = rawNodes.filter(d => !d.excluded && d.type !== "skill").length;
+  menu.appendChild(mk(t("plat_all"), _skillCount + (_mcpCount ? " · " + _mcpCount + " MCP" : ""), null,
     () => setPlatFilter(null), currentPlat === null));
   Object.keys(tree).sort().forEach(plat => {
     const label = plat === "__unlabeled__" ? t("plat_unlabeled") : plat;
