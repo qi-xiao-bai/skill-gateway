@@ -775,7 +775,7 @@
 .plat-item{position:relative;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:6px 14px;cursor:pointer;font-size:12px;white-space:nowrap;color:var(--text-dim)}
 .plat-item:hover{background:rgba(136,150,200,.14);color:var(--text)}
 .plat-item .cnt{font-size:11px;opacity:.7}
-.plat-item.has-sub::after{content:"b8";margin-left:6px;font-size:10px}
+.plat-item.has-sub::after{content:"\25b8";margin-left:6px;font-size:10px}
 .plat-sub{position:absolute;left:100%;top:0;min-width:150px;background:#1e1e2e;border:1px solid var(--border-color);border-radius:8px;padding:4px 0;display:none;box-shadow:0 8px 24px rgba(0,0,0,.45)}
 .plat-item:hover .plat-sub{display:block}
 .plat-sub-item{padding:5px 14px;cursor:pointer;font-size:12px;color:var(--text-dim)}
@@ -1879,7 +1879,18 @@ document.querySelectorAll(".filter-btn").forEach(btn => {
 //    hover 右弹 agent 子列表，点 agent=该 agent 绑定的技能 ──
 let currentPlat = null; // null=全量 | {type:"platform"|"agent", value}
 function _platOf(d) {
-  return d.platform || (d.agents && d.agents.length ? d.agents[0] : t("plat_unlabeled"));
+  if (d.platform) return d.platform;
+  if (d.agents && d.agents.length) return d.agents[0];
+  // 变体技能继承基座（variant_of）的平台归属——无归属的技能才落未标注
+  let base = d.variant_of, hops = 0;
+  while (base && hops++ < 3) {
+    const b = rawNodes.find(n => n.name === base);
+    if (!b) break;
+    if (b.platform) return b.platform;
+    if (b.agents && b.agents.length) return b.agents[0];
+    base = b.variant_of;
+  }
+  return t("plat_unlabeled");
 }
 function buildPlatformTree() {
   const tree = {};
