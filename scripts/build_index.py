@@ -77,7 +77,18 @@ def cmd_agent_index(a):
     不带清单参数 = 自助模式：直接扫描当前环境已挂载技能（约定根+广域发现）并入
     共享清单——跑完即用，不反问、不解释。平台有导出文件时再走文件导入。"""
     t0 = time.time()
-    agent_name = (a.agent or "").strip() or         (os.environ.get("SKILL_GATEWAY_AGENT") or "").strip()
+    # 身份只能显式声明：--agent > 环境变量。agent 底层知道自己运行在哪个平台，
+    # 直接声明即可——不搞路径推测、不设 default 兜底（无主身份会让共享清单的
+    # 归属标签跨环境撞车）。
+    agent_name = (a.agent or "").strip() or \
+        (os.environ.get("SKILL_GATEWAY_AGENT") or "").strip()
+    if not agent_name:
+        _miss(
+            "[agent-index] 请声明你的身份：--agent <平台名或智能体名>（你作为 agent "
+            "底层知道自己运行在哪个平台，直接声明即可；也可设环境变量 "
+            "SKILL_GATEWAY_AGENT）。不使用路径推测、不设 default 兜底——"
+            "无主身份会让共享清单的归属标签跨环境撞车。"
+        )
     list_path = os.path.join(paths.ROOT, "inputs", "available_skills.json")
     os.makedirs(os.path.dirname(list_path), exist_ok=True)
 
