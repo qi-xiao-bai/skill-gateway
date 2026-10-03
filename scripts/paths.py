@@ -515,7 +515,12 @@ LEGACY_OUTPUT_FILES = [
     "corrections.md",
     # 命中率账本（检索/采纳事件，本机运行时数据）
     "hit-ledger.jsonl",
+    # pack 构建产物（源目录里的交付 zip）
+    "skill-gateway.zip",
 ]
+
+# clean 的目录级清扫名单（编译缓存 + 会话工具残留）；源码目录绝不在此列
+CLEAN_DIR_SWEEP = ("__pycache__", ".pytest_cache", ".zcode", ".omx")
 
 # 环境本地登记表（inputs/ 下的运行时状态，随环境各自演化）——clean 时从源/副本
 # 根目录的 inputs/ 清除（源目录不该持有登记表；各环境用 agent-index 自行重建）。

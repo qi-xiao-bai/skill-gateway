@@ -12,3 +12,21 @@ _prod = os.environ.setdefault(
     "SKILL_GATEWAY_OUT_DIR",
     os.path.join(tempfile.mkdtemp(prefix="skix-tests-"), "output"),
 )
+
+
+# 测试环境不遗留：会话结束自动清扫本进程产物 + 超过 6 小时的陈旧 skix-* 临时物
+def _sweep_test_leftovers():
+    import glob
+    import shutil
+    import time
+    now = time.time()
+    for p in glob.glob(os.path.join(tempfile.gettempdir(), "skix-*")):
+        try:
+            if os.path.getmtime(p) < now - 6 * 3600 or p.startswith(os.path.join(tempfile.gettempdir(), "skix-tests-")):
+                shutil.rmtree(p, ignore_errors=True) if os.path.isdir(p) else os.remove(p)
+        except Exception:
+            pass
+
+
+import atexit
+atexit.register(_sweep_test_leftovers)

@@ -1291,6 +1291,22 @@ def cmd_clean(a):
                 except Exception as _ex:
                     print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
 
+    # 4. 系统临时区陈旧测试遗留（skix-* 超过 6 小时 = 崩溃/中断的测试残留）
+    import glob
+    import time as _time
+    _now = _time.time()
+    _tmp = __import__("tempfile").gettempdir()
+    for _p in glob.glob(os.path.join(_tmp, "skix-*")):
+        try:
+            if os.path.getmtime(_p) < _now - 6 * 3600:
+                if os.path.isdir(_p):
+                    shutil.rmtree(_p, ignore_errors=True)
+                else:
+                    os.remove(_p)
+                cleaned.append(f"tmp/{os.path.basename(_p)}")
+        except Exception:
+            pass
+
     print(
         f"[clean] 清理完成！共清理 {len(cleaned)} 项运行时产物与缓存，技能包已恢复为纯净源数据状态。"
     )

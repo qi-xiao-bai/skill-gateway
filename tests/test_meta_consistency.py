@@ -82,5 +82,31 @@ class MetaConsistencyTests(unittest.TestCase):
                 self.assertIn(k, st, f"阶段字典缺字段 {k}")
 
 
+    def test_6_clean_never_deletes_source(self):
+        """⑥ 不能删一个有用的：删除名单与源文件白名单必须零交集。"""
+        import paths
+        PROTECTED = {"SKILL.md", "README.md", "使用说明.md", "conftest.py",
+                     "skill_gateway.config.json", "skill_profile.json",
+                     ".gitignore", ".skillignore", ".skillexclude",
+                     "available_skills.example.json", "platform_connectors.json"}
+        self.assertEqual(set(paths.LEGACY_OUTPUT_FILES) & PROTECTED, set())
+        self.assertEqual(set(paths.RUNTIME_INPUT_FILES) & PROTECTED, set())
+        for d in ("docs", "references", "templates", "tests", "scripts", "inputs"):
+            self.assertNotIn(d, paths.CLEAN_DIR_SWEEP)
+
+    def test_7_all_temp_creations_use_skix_prefix(self):
+        """⑦ 不放过一个测试遗留：所有临时目录/文件创建点必须用 skix- 前缀
+        （clean 的系统临时区清扫按该前缀匹配，无前缀 = 扫不到的暗垃圾）。"""
+        import re as _re
+        base = os.path.dirname(SCRIPTS)
+        for fname in os.listdir(base):
+            if not fname.endswith(".py"):
+                continue
+            src = open(os.path.join(base, fname), encoding="utf-8").read()
+            for m in _re.finditer(r"mkdtemp\([^)]*\)|mkstemp\([^)]*\)", src):
+                call = m.group(0)
+                self.assertIn("skix-", call, f"{fname}: {call} 缺 skix- 前缀")
+
+
 if __name__ == "__main__":
     unittest.main()

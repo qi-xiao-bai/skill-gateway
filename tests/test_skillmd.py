@@ -8,7 +8,7 @@ import skillmd  # noqa: E402
 
 
 def _write(content, encoding="utf-8"):
-    fd, p = tempfile.mkstemp(suffix=".md")
+    fd, p = tempfile.mkstemp(suffix=".md", prefix="skix-skillmd-")
     os.close(fd)
     with open(p, "w", encoding=encoding, newline="") as f:
         f.write(content)
