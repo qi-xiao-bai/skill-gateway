@@ -1896,7 +1896,7 @@ function buildPlatformTree() {
   const tree = {};
   rawNodes.forEach(d => {
     if (d.excluded || d.type !== "skill") return; // MCP/连接器=环境级工具，不进平台组
-    const plat = d.platform || (d.agents && d.agents.length ? d.agents[0] : "__unlabeled__");
+    const plat = _platOf(d) === t("plat_unlabeled") ? "__unlabeled__" : _platOf(d); // 变体也继承基座平台
     tree[plat] = tree[plat] || { count: 0, agents: new Set() };
     tree[plat].count++;
     (d.agents || []).forEach(a => tree[plat].agents.add(a));
