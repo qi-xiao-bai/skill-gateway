@@ -186,23 +186,24 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence, prefs=None):
     # 名称亲和全局预分配：名字与阶段查询有交集的技能，归入其 IDF 加权最优阶段
     # （security-review 的 security 是稀有词 → 必归"安全卡点"，不被"审查把关"的
     #   review 抢走；code-review 的 code+review 双词 → 稳归"审查把关"）
-    claim_pool = {}  # stage -> [(specif, idf_score, low, entry)]：同阶段多候选只留最强
+    # 认领汇总：reserved（名字精确命中阶段保留词）优先，其余按名称亲和归入最优阶段
+    claim_pool = {}  # stage -> set(低技能名)
     for e in entries:
         low = e.get("name", "").lower()
         if low in used or e.get("excluded") or e.get("name") == "skill-gateway":
             continue
         if _domain_locked(e.get("name", ""), task_terms):
             continue
-        nt = retrieval.terms(e.get("name", ""))
-        if not nt:
-            continue
         name_tokens = {t for t in re.split(r"[^a-z0-9]+", e.get("name", "").lower())
                        if len(t) >= 2}
-        # 1) 保留词优先：名字命中某阶段独有语义词（security→安全卡点、review→审查把关…）
-        reserved_hits = [(name, max((len(t) for t in name_tokens & toks), default=0))
-                         for name, toks in _STAGE_RESERVED_TOKENS.items()
-                         if name_tokens & toks]
-        # 2) 否则按 IDF 加权的名称亲和归入最优阶段
+        reserved_stages = [name for name, toks in _STAGE_RESERVED_TOKENS.items()
+                           if name_tokens & toks]
+        if reserved_stages:
+            for stage_name in reserved_stages:
+                claim_pool.setdefault(stage_name, set()).add(low)
+            used.add(low)
+            continue
+        nt = retrieval.terms(e.get("name", ""))
         best = None
         for stage_name, st_terms in stage_terms_map.items():
             hit_terms = nt & st_terms
@@ -211,93 +212,99 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence, prefs=None):
             score = sum(weights.get(t, 0.0) for t in hit_terms)
             if best is None or score > best[1] + 1e-9:
                 best = (stage_name, score)
-        pick = (max(reserved_hits, key=lambda x: x[1])[0], 0) if reserved_hits             else ((best[0], 0) if best else None)
-        if not pick:
-            continue
-        idf_score = sum(weights.get(t, 0.0) for t in nt & stage_terms_map.get(pick[0], set()))             or best[1] if best else 0.0
-        claim_pool.setdefault(pick[0], []).append((pick[1], idf_score, low, e))
+        if best:
+            claim_pool.setdefault(best[0], set()).add(low)
+            used.add(low)
 
-    # 同阶段多候选 → 只留最强（词元最长/IDF 最高），避免同职技能挤满一个阶段
-    claim = {}
-    # 同阶段多候选只留"最强"一个。强弱判据（按序，随使用数据自我校准）：
-    #   ① 用户置顶 pinned（显式意志）② proactive 使用频次（真实使用记录）
-    #   ③ 阶段检索得分（IDF 相关性）④ 保留词命中长度 ⑤ 名称稳定序
+    # 胜者裁决（每阶段一个）：以**阶段查询的检索得分**排序（网关自己的打分口径），
+    # 并列（分差≤10%）→ 交人工确认并提示写入记忆；记忆偏好（stage_preferences）
+    # 已记录的阶段自动选用。置顶/使用频次作为同分时的次级信号。
     try:
         import proactive as _pro
         _freq = (_pro.load_proactive_state() or {}).get("skill_frequency", {}) or {}
     except Exception:
         _freq = {}
     _pinned = {n.lower() for n in get_pinned_skills()}
-
-    def _strength(item):
-        specif, rel_score, low, _e = item
-        return (1 if low in _pinned else 0,
-                int(_freq.get(low, 0) or 0),
-                round(rel_score, 3), specif, low)
-
     prefs = prefs or {}
-    for stage_name, pool in claim_pool.items():
-        pool.sort(key=_strength, reverse=True)
-        pref_low = (prefs.get(stage_name) or "").strip().lower()
-        pick = next((it for it in pool if it[2].lower() == pref_low), None)             if pref_low else None
-        if pick is not None:
-            # 用户此前已确认过该阶段的人选（stage_preferences 记忆）→ 自动选用
-            notes.append(f"阶段「{stage_name}」已按记忆偏好选用 [{pick[2]}]。")
-            claim[pick[2]] = stage_name
-            used.add(pick[2].lower())
-            continue
-        # 10% 并列检测：次名与首名的检索得分相差 ≤10% → 不擅自定夺，交人工确认
-        tie = False
-        if len(pool) >= 2:
-            s1, s2 = abs(pool[0][1]), abs(pool[1][1])
-            base = max(s1, s2, 1e-6)
-            tie = abs(s1 - s2) <= 0.10 * base
-        if tie:
-            cards = []
-            for it in pool[:3]:
-                e = it[3]
-                ev = "、".join(it[3].get("lifecycle_evidence", []) or
-                              (evidence.get(e["name"].lower()) or [])[:3])
-                ref = "含参考资料" if e.get("has_references") else "无大体积参考"
-                cards.append(f"[{e['name']}]（证据: {ev or '同名'}；{ref}）"
-                             f"{_desc_of(e, 60)}")
-            tied = [it[3]["name"] for it in pool[:3]]
-            notes.append(
-                f"⚠ 阶段「{stage_name}」并列候选（打分相差≤10%）——请人工确认用哪个："
-                + "；".join(cards)
-                + f"。确认后执行 `profile --stage-pref 「{stage_name}={tied[0]}」` "
-                  f"写入记忆，此后自动选用。")
-            for it in pool[:3]:
-                claim[it[2]] = stage_name
-                used.add(it[2].lower())
-            continue
-        specif, _score, low, _e = pool[0]
-        claim[low] = stage_name
-        used.add(low)
 
+    stage_members = {name: [] for name, _q in LIFECYCLE_STAGES}
     stage_members = {name: [] for name, _q in LIFECYCLE_STAGES}
     for e in domain_seeds:
         stage_members["编码实现"].append(e)
-    for low, stage_name in claim.items():
-        e = next(x for x in entries if x.get("name", "").lower() == low)
-        stage_members[stage_name].append(e)
+    by_name = {e["name"].lower(): e for e in entries}
+
+    def _pure_vocab(low):
+        toks = {t for t in re.split(r"[^a-z0-9]+", low) if len(t) >= 2}
+        return bool(toks) and toks <= _LIFECYCLE_VOCAB
+
     for stage_name, stage_query in LIFECYCLE_STAGES:
-        if stage_members[stage_name]:
+        claimants = sorted(claim_pool.get(stage_name) or [])
+        if not claimants:
+            hits = retrieval.search(entries, stage_query, top=1)
+            for _s, e, m in hits:
+                low = e["name"].lower()
+                if low in used or _domain_locked(e.get("name", ""), task_terms):
+                    continue
+                used.add(low)
+                evidence.setdefault(low, m)
+                stage_members[stage_name].append(e)
+                break
+            if not stage_members[stage_name]:
+                n_general += 1
+                notes.append(f"阶段「{stage_name}」检索无匹配技能 → 通用能力承接。")
             continue
-        hits = retrieval.search(entries, stage_query, top=1)
-        for _s, e, m in hits:
-            low = e["name"].lower()
-            if low in used or len(stage_members[stage_name]) >= MAX_STAGE_SKILLS:
-                continue
-            if _domain_locked(e["name"], task_terms):
-                continue
-            used.add(low)
-            evidence.setdefault(low, m)
-            stage_members[stage_name].append(e)
-            break  # 兜底阶段只补 1 个，不堆同职技能
-        if not stage_members[stage_name]:
-            n_general += 1
-            notes.append(f"阶段「{stage_name}」检索无匹配技能 → 通用能力承接。")
+
+        # 胜者排序：阶段查询的检索得分（网关打分口径）> 置顶 > 使用频次 > 名称
+        hits = retrieval.search(entries, stage_query, top=20)
+        score_map = {e["name"].lower(): s for s, e, _m in hits}
+        scored = []
+        for low in claimants:
+            e = by_name[low]
+            scored.append((score_map.get(low, 0.0),
+                           1 if low in _pinned else 0,
+                           int(_freq.get(low, 0) or 0), low, e))
+        scored.sort(key=lambda x: (-x[0], -x[1], -x[2], x[3]))
+
+        pref_low = (prefs.get(stage_name) or "").strip().lower()
+        pick = next((it for it in scored if it[3] == pref_low), None) if pref_low else None
+        if pick is not None:
+            stage_members[stage_name].append(pick[4])
+            used.add(pick[3])
+            notes.append(f"阶段「{stage_name}」已按记忆偏好选用 [{pick[3]}]。")
+            continue
+
+        if stage_name == "编码实现":
+            # 编码实现 = 领域种子（任务检索已在位）+ 纯流程名技能；带领域词的
+            # 认领者（如 salesforce-develop 混进网页游戏任务）一律不进
+            for s0, _p, _f, low, e in scored:
+                if _pure_vocab(low) and low not in {m["name"].lower() for m in stage_members[stage_name]}:
+                    stage_members[stage_name].append(e)
+                    used.add(low)
+            if not stage_members[stage_name]:
+                n_general += 1
+                notes.append(f"阶段「{stage_name}」检索无匹配技能 → 通用能力承接。")
+            continue
+
+        # 10% 并列检测（用户规则）：分差 ≤10% → 不擅自定夺，交人工确认
+        tie = len(scored) >= 2 and (scored[0][0] - scored[1][0]) <= 0.10 * max(scored[0][0], 1e-6)
+        if tie:
+            cards = []
+            for s0, _p, _f, low, e in scored[:3]:
+                ev = "、".join(evidence.get(low) or [])[:30]
+                ref = "含参考资料" if e.get("has_references") else "无大体积参考"
+                cards.append(f"[{low}]({s0:.1f}，证据: {ev or '同名'}；{ref}) {_desc_of(e, 50)}")
+            notes.append(
+                f"⚠ 阶段「{stage_name}」并列候选（打分相差≤10%）——请人工确认用哪个："
+                + "；".join(cards)
+                + f"。确认后执行 `profile --stage-pref 「{stage_name}={scored[0][3]}」` 写入记忆，此后自动选用。")
+            for s0, _p, _f, low, e in scored[:3]:
+                stage_members[stage_name].append(e)
+                used.add(low)
+            continue
+
+        winner = scored[0]
+        stage_members[stage_name].append(winner[4])
+        used.add(winner[3].lower())
 
     for stage_name, _q in LIFECYCLE_STAGES:
         members = stage_members[stage_name]
