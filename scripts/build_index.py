@@ -122,11 +122,21 @@ def cmd_agent_index(a):
     else:
         # 自助模式按"环境声明/父目录"圈定挂载集，绝不回退全机器扫描
         # （全机器灌入会让共享清单被 agents=[default] 的整盘技能污染）
-        # 技能根声明优先级：--skill-dirs（agent 显式声明）> 环境声明文件（仅当本副本
-        # 确实住在声明库内才生效）> 父目录兜底；都没有 → 拒绝，绝不全机器灌入
+        # 技能根解析（声明一次、永久记忆）：
+        #   1) 记忆文件里该智能体已声明过 → 直接用，零参数全自动
+        #   2) --skill-dirs 显式声明 → 用它并写入记忆（下次自动）
+        #   3) 环境声明文件（仅当本副本住在声明库内才生效）/ 父目录兜底
+        #   4) 都没有 → 询问声明，绝不全机器灌入
+        remembered = paths._load_env_roots_memory().get(agent_name) or []
         declared = getattr(a, "skill_dirs", "") or ""
-        if declared:
+        if remembered and not declared:
+            env_dirs = [d for d in remembered if os.path.isdir(d)]
+            print(f"[agent-index] 按记忆中的 [{agent_name}] 技能根圈定: {env_dirs}")
+        elif declared:
             env_dirs = [d for d in (x.strip() for x in re.split(r"[;|]", declared) + declared.split(os.pathsep)) if d and os.path.isdir(d)]
+            if env_dirs:
+                paths._save_env_roots_memory(agent_name, env_dirs)
+                print(f"[agent-index] 已声明技能根并写入记忆（下次零参数自动使用）: {env_dirs}")
         else:
             env_dirs = [d for d in paths.discover_env_skill_roots()
                         if os.path.normcase(paths.ROOT).startswith(os.path.normcase(d) + os.sep)
@@ -142,10 +152,10 @@ def cmd_agent_index(a):
                 env_dirs = [parent]
         if not env_dirs:
             _miss(
-                "[agent-index] 无法判定当前环境的技能根（未设 SKILL_GATEWAY_SKILL_DIRS，"
-                "也未发现环境声明文件如 ~/.gemini/config/skills.json，父目录亦无技能集）。"
-                "为避免整台机器技能灌入共享清单，本次不写入。"
-                "请设 SKILL_GATEWAY_SKILL_DIRS=<本环境技能目录> 或提供清单文件。")
+                f"[agent-index] 首次遇到智能体 [{agent_name}]，请声明你的技能挂载根（只需一次）："
+                f"agent-index --agent {agent_name} --skill-dirs \"<根1;根2>\""
+                "——你底层知道自己平台把技能挂在哪里；声明后写入 env_skill_roots.json 记忆，"
+                "之后零参数全自动。也可设环境变量 SKILL_GATEWAY_SKILL_DIRS。")
         prev_dirs = os.environ.get("SKILL_GATEWAY_SKILL_DIRS")
         prev_only = os.environ.get("SKILL_GATEWAY_ONLY_DIRS")
         os.environ["SKILL_GATEWAY_SKILL_DIRS"] = os.pathsep.join(env_dirs)

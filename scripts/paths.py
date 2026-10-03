@@ -440,6 +440,30 @@ ENV_SKILL_DECLARATIONS = (
 )
 
 
+def _load_env_roots_memory():
+    """智能体技能根记忆（inputs/env_skill_roots.json）：{智能体名: [声明的挂载根]}。
+    每个智能体只需 --skill-dirs 声明一次，网关写入此处，之后零参数自动圈定。"""
+    p = os.path.join(ROOT, "inputs", "env_skill_roots.json")
+    try:
+        with open(p, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_env_roots_memory(agent_name, roots):
+    """把某智能体声明的技能根写入记忆（保留其他智能体的记录，合并更新）。"""
+    p = os.path.join(ROOT, "inputs", "env_skill_roots.json")
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    data = _load_env_roots_memory()
+    data[agent_name] = list(roots)
+    tmp = p + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, p)
+
+
 def discover_env_skill_roots():
     """发现"当前环境声明"的技能根目录（读平台声明文件，如
     ~/.gemini/config/skills.json 的 entries[].path）。
@@ -500,6 +524,7 @@ RUNTIME_INPUT_FILES = [
     "available_skills.json",
     "agent_list.json",
     "platform_skills.json",
+    "env_skill_roots.json",
 ]
 
 _MIGRATED = False
