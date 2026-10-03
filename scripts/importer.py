@@ -197,10 +197,13 @@ def to_available_list(items, agent_name=None, old_doc=None):
             rec["agents"] = agents
         imported.add(name.lower())
         skills.append(rec)
-    # 未被本次导入的旧条目原样保留——共享清单属于所有智能体环境，合并不裁剪
+    # 未被本次导入的旧条目：有归属（agents 字段）的保留——共享清单属于所有
+    # 智能体环境，合并不裁剪；无归属（无 agents 字段）的视为陈旧残留清扫
     for k in old_order:
         if k not in imported:
-            skills.append(old_map[k])
+            old_it = old_map[k]
+            if old_it.get("agents"):
+                skills.append(old_it)
     doc = {}
     if agent_name:
         doc["current_agent"] = agent_name

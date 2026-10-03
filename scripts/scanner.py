@@ -233,9 +233,12 @@ def _entries_from_items(items, source_tag="available-list"):
             "source": source_tag,
             "mtime": 0,
             "visibility": "blocked" if blocked else "ready",
+            # 严格归属：清单里没有 agents 字段的条目 = 无法归属（陈旧/来历不明），
+            # 不计入任何智能体的绑定——防止旧运行残留冒充绑定数
             "agent_bound": True if (cur_agent is None or not any_agent_info
                                     or not has_agents)
                            else (cur_agent in agents),
+            "attributed": has_agents,
         }
         if agents:
             entry["agents"] = agents
