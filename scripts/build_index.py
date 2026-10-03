@@ -1246,9 +1246,9 @@ def cmd_clean(a):
         except Exception as _ex:
             print(f"[skill-gateway] 失败(已忽略): {_ex}", file=sys.stderr)
 
-    # 3. 清理 Python 编译缓存
+    # 3. 清理编译缓存与会话工具残留（.zcode 会话计划/.omx 计划文件）
     for root, dirs, _files in os.walk(paths.ROOT):
-        for d in ("__pycache__", ".pytest_cache"):
+        for d in ("__pycache__", ".pytest_cache", ".zcode", ".omx"):
             if d in dirs:
                 target_dir = os.path.join(root, d)
                 try:
