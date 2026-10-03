@@ -485,6 +485,15 @@ LEGACY_OUTPUT_FILES = [
     "hit-ledger.jsonl",
 ]
 
+# 环境本地登记表（inputs/ 下的运行时状态，随环境各自演化）——clean 时从源/副本
+# 根目录的 inputs/ 清除（源目录不该持有登记表；各环境用 agent-index 自行重建）。
+# 模板与示例（available_skills.example.json / platform_connectors.json）不在名单，永不清理。
+RUNTIME_INPUT_FILES = [
+    "available_skills.json",
+    "agent_list.json",
+    "platform_skills.json",
+]
+
 _MIGRATED = False
 
 

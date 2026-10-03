@@ -1241,6 +1241,18 @@ def cmd_clean(a):
                 except Exception as ex:
                     print(f"  删除失败 {fp}: {ex}")
 
+    # 2.4 环境本地登记表（inputs/ 运行时状态）：源目录不该持有，clean 一并清除
+    inputs_d = os.path.join(paths.ROOT, "inputs")
+    if os.path.isdir(inputs_d):
+        for fname in paths.RUNTIME_INPUT_FILES:
+            fp = os.path.join(inputs_d, fname)
+            if os.path.isfile(fp):
+                try:
+                    os.remove(fp)
+                    cleaned.append(f"inputs/{fname}")
+                except Exception as ex:
+                    print(f"  删除失败 {fp}: {ex}", file=sys.stderr)
+
     # 2.5 平台桥接易失层（inputs/platform_mirror）：可随时由 bridge 重建
     mirror = os.path.join(paths.ROOT, "inputs", "platform_mirror")
     if os.path.isdir(mirror):
