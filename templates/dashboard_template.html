@@ -842,7 +842,7 @@
     </div>
 
     <div class="plat-select" id="platSelect">
-      <button class="btn btn-lang plat-btn" id="platBtn" data-i18n="plat_all" title="Filter by platform / 按平台筛选">全量显示</button>
+      <button class="btn btn-lang plat-btn" id="platBtn" data-i18n="plat_select" title="切换平台：显示对应平台的全部技能 / Switch platform">平台</button>
       <div class="plat-menu" id="platMenu"></div>
     </div>
 
@@ -985,6 +985,7 @@ const I18N = {
     filter_all: "全部",
     filter_ready: "平台可用",
     plat_all: "全量显示",
+    plat_select: "平台",
     plat_unlabeled: "未标注",
     filter_skill: "仅技能",
     filter_mcp: "仅MCP/连接器",
@@ -1053,6 +1054,7 @@ const I18N = {
     filter_all: "All",
     filter_ready: "Platform Ready",
     plat_all: "Show All",
+    plat_select: "Platform",
     plat_unlabeled: "Unlabeled",
     filter_skill: "Skills",
     filter_mcp: "MCP / Connectors",
@@ -1920,7 +1922,7 @@ function renderPlatformMenu() {
 function setPlatFilter(f) {
   currentPlat = f;
   const btn = document.getElementById("platBtn");
-  if (!f) { btn.textContent = t("plat_all"); }
+  if (!f) { btn.textContent = t("plat_select"); }
   else if (f.type === "platform") {
     btn.textContent = (f.value === "__unlabeled__" ? t("plat_unlabeled") : f.value);
   } else { btn.textContent = f.value; }
