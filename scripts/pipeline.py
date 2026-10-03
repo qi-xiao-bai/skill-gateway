@@ -346,6 +346,7 @@ def build_pipeline(query, entries=None, edges=None, seed_top=SEED_TOP, _retried=
                 query, entries=refreshed_entries, edges=refreshed_edges,
                 seed_top=seed_top, _retried=True,
                 include_off_list=include_off_list, agent_only=agent_only,
+                lifecycle=lifecycle,  # 自愈重试不得丢模式声明（曾因丢此参退回图谱模式）
             )
 
     # 开发任务生命周期契约（代码化）：检测到开发任务且绑定集能支撑 ≥3 个阶段时，

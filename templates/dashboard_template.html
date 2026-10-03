@@ -766,6 +766,21 @@
     transform: translateY(0);
     opacity: 1;
   }
+
+/* 平台/智能体选择器：全量默认；平台 hover 右弹 agent 子列表 */
+.plat-select{position:relative;margin-right:8px}
+.plat-btn{min-width:96px;text-align:center}
+.plat-menu{position:absolute;top:120%;right:0;min-width:200px;background:#1e1e2e;border:1px solid var(--border-color);border-radius:8px;padding:6px 0;display:none;z-index:60;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.plat-select.open .plat-menu{display:block}
+.plat-item{position:relative;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:6px 14px;cursor:pointer;font-size:12px;white-space:nowrap;color:var(--text-dim)}
+.plat-item:hover{background:rgba(136,150,200,.14);color:var(--text)}
+.plat-item .cnt{font-size:11px;opacity:.7}
+.plat-item.has-sub::after{content:"▸";margin-left:6px;font-size:10px}
+.plat-sub{position:absolute;left:100%;top:0;min-width:150px;background:#1e1e2e;border:1px solid var(--border-color);border-radius:8px;padding:4px 0;display:none;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.plat-item:hover .plat-sub{display:block}
+.plat-sub-item{padding:5px 14px;cursor:pointer;font-size:12px;color:var(--text-dim)}
+.plat-sub-item:hover{background:rgba(136,150,200,.14);color:var(--text)}
+.plat-active{background:rgba(2,132,199,.18)!important;color:var(--text)!important}
 </style>
 </head>
 <body>
@@ -824,6 +839,11 @@
       <button class="filter-btn" data-filter="skill" data-i18n="filter_skill">仅技能</button>
       <button class="filter-btn" data-filter="mcp" data-i18n="filter_mcp">仅MCP</button>
       <button class="filter-btn" data-filter="excluded" data-i18n="filter_excluded">已排除</button>
+    </div>
+
+    <div class="plat-select" id="platSelect">
+      <button class="btn btn-lang plat-btn" id="platBtn" data-i18n="plat_all" title="Filter by platform / 按平台筛选">全量显示</button>
+      <div class="plat-menu" id="platMenu"></div>
     </div>
 
     <!-- Bilingual Toggle Button -->
@@ -964,6 +984,8 @@ const I18N = {
     search_placeholder: "搜索技能、MCP、触发词或描述... (按 / 聚焦)",
     filter_all: "全部",
     filter_ready: "平台可用",
+    plat_all: "全量显示",
+    plat_unlabeled: "未标注",
     filter_skill: "仅技能",
     filter_mcp: "仅MCP/连接器",
     filter_excluded: "已排除",
@@ -1030,6 +1052,8 @@ const I18N = {
     search_placeholder: "Search skills, MCPs, triggers... (Press / to focus)",
     filter_all: "All",
     filter_ready: "Platform Ready",
+    plat_all: "Show All",
+    plat_unlabeled: "Unlabeled",
     filter_skill: "Skills",
     filter_mcp: "MCP / Connectors",
     filter_excluded: "Excluded",
@@ -1717,6 +1741,10 @@ function applyCategoryFilter() {
     if (currentFilter === "skill" && d.type !== "skill") return "none";
     if (currentFilter === "mcp" && d.type !== "mcp") return "none";
     if (currentFilter === "excluded" && !d.excluded) return "none";
+    if (currentPlat) {
+      if (currentPlat.type === "platform" && _platOf(d) !== (currentPlat.value === "__unlabeled__" ? t("plat_unlabeled") : currentPlat.value)) return "none";
+      if (currentPlat.type === "agent" && !(d.agents || []).includes(currentPlat.value)) return "none";
+    }
     return "";
   });
 
@@ -1839,6 +1867,80 @@ document.querySelectorAll(".filter-btn").forEach(btn => {
 });
 
 // Excluded & Labels Toggles
+
+// ── 平台/智能体选择器：平台树从节点数据聚合；点平台=该平台全量技能，
+//    hover 右弹 agent 子列表，点 agent=该 agent 绑定的技能 ──
+let currentPlat = null; // null=全量 | {type:"platform"|"agent", value}
+function _platOf(d) {
+  return d.platform || (d.agents && d.agents.length ? d.agents[0] : t("plat_unlabeled"));
+}
+function buildPlatformTree() {
+  const tree = {};
+  nodes.forEach(d => {
+    if (d.excluded) return;
+    const plat = d.platform || (d.agents && d.agents.length ? d.agents[0] : "__unlabeled__");
+    tree[plat] = tree[plat] || { count: 0, agents: new Set() };
+    tree[plat].count++;
+    (d.agents || []).forEach(a => tree[plat].agents.add(a));
+  });
+  return tree;
+}
+function renderPlatformMenu() {
+  const tree = buildPlatformTree();
+  const menu = document.getElementById("platMenu");
+  menu.innerHTML = "";
+  const mk = (label, cnt, sub, onClick,isActive) => {
+    const li = document.createElement("div");
+    li.className = "plat-item" + (sub ? " has-sub" : "") + (isActive ? " plat-active" : "");
+    li.innerHTML = `<span>${label}</span><span class="cnt">${cnt}</span>`;
+    if (sub && sub.size) {
+      const subEl = document.createElement("div");
+      subEl.className = "plat-sub";
+      sub.forEach(a => {
+        const si = document.createElement("div");
+        si.className = "plat-sub-item" + (currentPlat && currentPlat.type==="agent" && currentPlat.value===a ? " plat-active" : "");
+        si.textContent = a;
+        si.onclick = e => { e.stopPropagation(); setPlatFilter({type:"agent", value:a}); };
+        subEl.appendChild(si);
+      });
+      li.appendChild(subEl);
+    }
+    li.onclick = () => onClick();
+    return li;
+  };
+  menu.appendChild(mk(t("plat_all"), nodes.filter(d=>!d.excluded).length, null,
+    () => setPlatFilter(null), currentPlat === null));
+  Object.keys(tree).sort().forEach(plat => {
+    const label = plat === "__unlabeled__" ? t("plat_unlabeled") : plat;
+    menu.appendChild(mk(label, tree[plat].count, tree[plat].agents,
+      () => setPlatFilter({type:"platform", value:plat}),
+      currentPlat && currentPlat.type==="platform" && currentPlat.value===plat));
+  });
+}
+function setPlatFilter(f) {
+  currentPlat = f;
+  const btn = document.getElementById("platBtn");
+  if (!f) { btn.textContent = t("plat_all"); }
+  else if (f.type === "platform") {
+    btn.textContent = (f.value === "__unlabeled__" ? t("plat_unlabeled") : f.value);
+  } else { btn.textContent = f.value; }
+  document.getElementById("platSelect").classList.remove("open");
+  renderPlatformMenu();
+  applyCategoryFilter();
+}
+(function initPlatSelect() {
+  const sel = document.getElementById("platSelect");
+  document.getElementById("platBtn").onclick = e => {
+    e.stopPropagation();
+    sel.classList.toggle("open");
+    if (sel.classList.contains("open")) renderPlatformMenu();
+  };
+  document.addEventListener("click", ev => {
+    if (!sel.contains(ev.target)) sel.classList.remove("open");
+  });
+  renderPlatformMenu();
+})();
+
 document.getElementById("toggleExcluded").addEventListener("change", applyCategoryFilter);
 document.getElementById("toggleLabels").addEventListener("change", function() {
   textElements.style("display", this.checked ? "" : "none");

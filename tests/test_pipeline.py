@@ -696,5 +696,51 @@ class TestPipeline(unittest.TestCase):
         self.assertIn("https://erp.internal.company.com/mcp", c_desc)
 
 
+    def test_lifecycle_tie_asks_and_pref_remembers(self):
+        """并列候选（分差≤10%）→ 交人工确认并提示写入记忆；有记忆偏好 → 自动选用。"""
+        entries = [
+            {"name": "plan-skill", "type": "skill",
+             "description": "需求分析 拆解规划 requirement analysis planning", "triggers": ["规划"]},
+            {"name": "refactor-a", "type": "skill",
+             "description": "重构 清理 refactor cleanup 重构治理", "triggers": ["重构"]},
+            {"name": "refactor-b", "type": "skill",
+             "description": "重构 清理 refactor cleanup 优化", "triggers": ["清理"]},
+        ]
+        stages, notes, _n = pipeline._lifecycle_stages(
+            "重构 治理 refactor cleanup", entries, [], {})
+        st = next(s for s in stages if s["lifecycle"] == "重构治理")
+        self.assertGreaterEqual(len(st["skill_names"]), 2)  # 并列候选都列出
+        self.assertTrue(any("人工确认" in n for n in notes))
+        self.assertTrue(any("stage-pref" in n for n in notes))
+        # 记忆偏好 → 自动选用，不再并列
+        stages2, notes2, _n2 = pipeline._lifecycle_stages(
+            "重构 治理 refactor cleanup", entries, [], {},
+            prefs={"重构治理": "refactor-a"})
+        st2 = next(s for s in stages2 if s["lifecycle"] == "重构治理")
+        self.assertEqual(st2["skill_names"], ["refactor-a"])
+        self.assertTrue(any("已按记忆偏好" in n for n in notes2))
+
+
+    def test_lifecycle_survives_autoheal_retry(self):
+        """回归：query 零种子触发自愈重试时，--lifecycle 模式声明不得丢失
+        （曾因重试递归丢参退回图谱模式，输出空编排）。"""
+        from unittest import mock
+        entries = [
+            {"name": "plan", "type": "skill", "description": "planning 规划",
+             "path": "", "triggers": []},
+            {"name": "tdd", "type": "skill", "description": "test-driven 测试",
+             "path": "", "triggers": []},
+            {"name": "code-review", "type": "skill", "description": "code review 审查",
+             "path": "", "triggers": []},
+        ]
+        with mock.patch.object(pipeline.index_store, "auto_update_on_miss",
+                               return_value=(entries, [], {"added": ["x"]}, True)):
+            pipe = pipeline.build_pipeline(
+                "完全无匹配的查询 zzzq", entries=entries, edges=[],
+                lifecycle=True)
+        self.assertEqual(pipe["mode"], "lifecycle")
+        self.assertTrue(len(pipe["stages"]) >= 3)
+
+
 if __name__ == "__main__":
     unittest.main()
