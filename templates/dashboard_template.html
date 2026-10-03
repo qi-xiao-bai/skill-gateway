@@ -56,15 +56,16 @@
   /* Top Navigation Bar */
   #top-bar {
     position: fixed;
-    top: 14px;
-    left: 14px;
-    right: 14px;
+    top: 0;
+    left: 0;
+    right: 0;
     height: 52px;
     background: var(--bg-card);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
+    border-top: none;
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1916,13 +1917,6 @@ function renderPlatformMenu() {
   };
   menu.appendChild(mk(t("plat_all"), nodes.filter(d=>!d.excluded).length, null,
     () => setPlatFilter(null), currentPlat === null));
-  if (Object.keys(tree).length <= 1) {
-    const none = document.createElement("div");
-    none.className = "plat-none";
-    none.textContent = t("plat_none");
-    menu.appendChild(none);
-    return;
-  }
   Object.keys(tree).sort().forEach(plat => {
     const label = plat === "__unlabeled__" ? t("plat_unlabeled") : plat;
     menu.appendChild(mk(label, tree[plat].count, tree[plat].agents,
