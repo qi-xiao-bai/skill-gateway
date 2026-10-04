@@ -126,6 +126,32 @@ class AvailableListTests(unittest.TestCase):
             if old_env is not None:
                 os.environ["SKILL_GATEWAY_AGENT"] = old_env
 
+    def test_description_zh_flows_registry_to_index(self):
+        """登记表里的 description_zh 必须进索引条目并在三段合并中存活——
+        dashboard 中文/双语对照的数据源就是索引里的这个字段，断链=翻译永远不显示。"""
+        os.makedirs(os.path.join(scanner.ROOT, "inputs"), exist_ok=True)
+        with open(os.path.join(scanner.ROOT, "inputs", "available_skills.json"),
+                  "w", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "skills": [
+                    {"name": "feature-dev", "description": "Full dev workflow",
+                     "description_zh": "全面的功能开发工作流程", "agents": ["zcode"]},
+                ]}, ensure_ascii=False))
+        ents = scanner.available_list_entries()
+        self.assertEqual(ents[0].get("description_zh"), "全面的功能开发工作流程")
+        # 三段合并：登记表补/改了翻译 → 必须判为 updated（不能走 kept 复用旧的无翻译条目）
+        old = [dict(ents[0])]
+        old[0].pop("description_zh")
+        merged, _st = index_store._update_from_available_list(old, ents)
+        by = {e["name"]: e for e in merged}
+        self.assertEqual(by["feature-dev"].get("description_zh"),
+                         "全面的功能开发工作流程")
+        # 二次合并：条目已带翻译且未变 → kept 复用旧记录，翻译必须原样保留
+        merged2, _st2 = index_store._update_from_available_list(merged, ents)
+        by2 = {e["name"]: e for e in merged2}
+        self.assertEqual(by2["feature-dev"].get("description_zh"),
+                         "全面的功能开发工作流程")
+
     def test_search_agent_only_filter(self):
         ents = [{"name": "bound-a", "description": "code review 审查代码", "type": "skill",
                  "path": "", "triggers": [], "visibility": "ready", "agent_bound": True},

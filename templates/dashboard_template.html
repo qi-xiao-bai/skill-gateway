@@ -470,6 +470,12 @@
     font-size: 12px;
     line-height: 1.5;
   }
+  .desc-missing-hint {
+    margin-top: 6px;
+    font-size: 10px;
+    color: var(--text-dim);
+    font-style: italic;
+  }
 
   /* Connection Item Polish */
   .conn-item {
@@ -1001,6 +1007,7 @@ const I18N = {
     plat_all: "全部平台",
     plat_unlabeled: "未标注",
     plat_empty: "（当前环境无可见条目）",
+    zh_missing_hint: "（该条目暂无中文翻译：运行 /skill-gateway agent-index 联网翻译回填后刷新）",
     filter_skill: "技能",
     filter_mcp: "MCP",
     filter_connector: "连接器",
@@ -1072,6 +1079,7 @@ const I18N = {
     plat_all: "All Platforms",
     plat_unlabeled: "Unlabeled",
     plat_empty: "(no visible items in this environment)",
+    zh_missing_hint: "(No Chinese translation yet — run /skill-gateway agent-index in this deployment to fetch translations)",
     filter_skill: "Skills",
     filter_mcp: "MCP",
     filter_connector: "Connectors",
@@ -1530,16 +1538,18 @@ function updateDescriptionView() {
     container.innerHTML = `<span style="color:var(--text-dim); font-style:italic;">${t("no_desc")}</span>`;
     return;
   }
-  const zhLocal = d.desc_zh || "";  // 仅用 SKILL.md frontmatter 自带的 description_zh，不做在线翻译
+  const zhLocal = d.desc_zh || "";  // 登记表翻译经索引透传而来；缺失时明示缺口，不静默回退英文装作翻译过
   if (currentDescMode === "en") {
     container.innerText = originalDesc;
   } else if (currentDescMode === "zh") {
-    container.innerText = zhLocal || originalDesc;
+    container.innerHTML = zhLocal
+      ? escapeHtml(zhLocal)
+      : `${escapeHtml(originalDesc)}<div class="desc-missing-hint">${escapeHtml(t("zh_missing_hint"))}</div>`;
   } else {
     if (zhLocal && zhLocal !== originalDesc) {
       container.innerHTML = `<div>${escapeHtml(zhLocal)}</div><div class="desc-en-sub">${escapeHtml(originalDesc)}</div>`;
     } else {
-      container.innerHTML = `<div>${escapeHtml(originalDesc)}</div>`;
+      container.innerHTML = `<div>${escapeHtml(originalDesc)}</div><div class="desc-missing-hint">${escapeHtml(t("zh_missing_hint"))}</div>`;
     }
   }
 }

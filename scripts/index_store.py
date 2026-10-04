@@ -582,18 +582,22 @@ def _update_from_available_list(old, avail):
                 and e.get("source") in ("available-list", "profile-authoritative")}
     added, updated, kept, out = [], [], [], []
     list_names = set()
+
+    def _sig(e):
+        # 变更签名必须含 description_zh：登记表补/改翻译后重算，条目要走 updated
+        # 拿到带翻译的新记录，而不是被 kept 判定复用旧的无翻译条目（翻译永远不显示）
+        return (e.get("description"), tuple(e.get("triggers") or []), e.get("path"),
+                e.get("category"), e.get("platform"), e.get("excluded", False),
+                tuple(e.get("agents") or []), e.get("agent_bound"),
+                (e.get("description_zh") or ""))
+
     for e in avail:
         nm = e["name"]
         list_names.add(nm.lower())
         o = old_list.get(nm.lower())
-        sig = (e.get("description"), tuple(e.get("triggers") or []), e.get("path"),
-               e.get("category"), e.get("platform"), e.get("excluded", False),
-               tuple(e.get("agents") or []), e.get("agent_bound"))
         if o is None:
             added.append(nm)
-        elif (o.get("description"), tuple(o.get("triggers") or []), o.get("path"),
-              o.get("category"), o.get("platform"), o.get("excluded", False),
-              tuple(o.get("agents") or []), o.get("agent_bound")) != sig:
+        elif _sig(o) != _sig(e):
             updated.append(nm)
         else:
             kept.append(nm)

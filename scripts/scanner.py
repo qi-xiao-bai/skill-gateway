@@ -242,6 +242,11 @@ def _entries_from_items(items, source_tag="available-list"):
         }
         if agents:
             entry["agents"] = agents
+        # 登记表翻译透传：agent-index 联网回填的 description_zh 必须进索引——
+        # dashboard 中文/双语对照与中文 query 检索都吃这个字段（此前在此断链）
+        zh = (it.get("description_zh") or it.get("description_cn") or "").strip()
+        if zh:
+            entry["description_zh"] = zh
         if it.get("category"):
             entry["category"] = str(it["category"]).strip()
         if it.get("platform"):
