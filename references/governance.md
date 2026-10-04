@@ -21,7 +21,7 @@
 
 ### 3. 编排结果排除自身
 
-- indexer 自身也在技能库中，pipeline 编排与检索结果必须排除 `skill-gateway` 自身，防止自环套娃。
+- 网关自身也在技能库中，pipeline 编排与检索结果必须排除 `skill-gateway` 自身，防止自环套娃。
 - 实现方式：检索与编排阶段对结果集过滤 `name == "skill-gateway"` 的条目。
 
 ---
