@@ -1951,7 +1951,7 @@ function buildPlatformTree(typeKey) {
 
 let currentPlat = null; // null=全量 | {type:"platform"|"agent", value}
 const platMenu = document.getElementById("platMenu");
-let platMenuType = null, platMenuChip = null;
+let platMenuType = null, platMenuChip = null, platMenuHideTimer = null;
 
 function renderPlatMenu(typeKey) {
   const rows = buildPlatformTree(typeKey);
@@ -1982,15 +1982,19 @@ function showPlatMenu(chip) {
   const typeKey = chip.getAttribute("data-filter");
   if (!typeKey || ["all", "excluded"].includes(typeKey)) return; // 全部/已排除不挂平台下拉
   if (platMenuChip === chip && platMenu.classList.contains("show")) return; // 同 chip 已展开，避免重渲染闪烁
+  clearTimeout(platMenuHideTimer); platMenuHideTimer = null;
   platMenuChip = chip;
   platMenuType = typeKey;
   renderPlatMenu(typeKey);
   platMenu.classList.add("show");
   const r = chip.getBoundingClientRect();
-  platMenu.style.top = (r.bottom + 6) + "px";
+  platMenu.style.top = (r.bottom - 1) + "px"; // 贴住 chip 下缘（压边 1px）：chip→菜单零死区，鼠标直下不断链
   platMenu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - platMenu.offsetWidth - 8)) + "px";
 }
-function hidePlatMenu() { platMenu.classList.remove("show"); platMenuType = null; platMenuChip = null; }
+function hidePlatMenu() {
+  clearTimeout(platMenuHideTimer); platMenuHideTimer = null;
+  platMenu.classList.remove("show"); platMenuType = null; platMenuChip = null;
+}
 
 // Agent 飞出的 JS 驱动：mouseover 委托在容器上（innerHTML 重渲染也存活）。
 // 纯 CSS :hover 在合成/触控输入下不稳定，.open 类做双保险
@@ -2006,14 +2010,16 @@ platMenu.addEventListener("mouseover", e => {
 document.querySelectorAll(".filter-btn.has-menu").forEach(chip => {
   chip.addEventListener("mouseenter", () => showPlatMenu(chip));
 });
-// 悬停保持判定：光标既不在触发 chip 也不在菜单内才收起。
-// 不用 mouseleave+定时器——边界事件在真实/合成输入下都会抖，定时器误触发导致菜单闪烁
+// 悬停保持判定：光标在触发 chip 或菜单内则保持；离开两者后给 250ms 宽限再收起——
+// chip→菜单、平台行→Agent 飞出之间的缝隙/斜向移动不会把菜单闪没
 document.addEventListener("mousemove", e => {
   if (!platMenu.classList.contains("show")) return;
   const t = e.target;
-  if (platMenu.contains(t)) return;
-  if (platMenuChip && platMenuChip.contains(t)) return;
-  hidePlatMenu();
+  if (platMenu.contains(t) || (platMenuChip && platMenuChip.contains(t))) {
+    clearTimeout(platMenuHideTimer); platMenuHideTimer = null; // 回到 chip/菜单 → 取消收起
+    return;
+  }
+  if (!platMenuHideTimer) platMenuHideTimer = setTimeout(hidePlatMenu, 250);
 });
 window.addEventListener("resize", hidePlatMenu);
 
