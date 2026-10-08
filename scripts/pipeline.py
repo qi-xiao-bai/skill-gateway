@@ -268,15 +268,21 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence, prefs=None):
                         ref = "含参考资料" if e.get("has_references") else "无大体积参考"
                         cards.append(f"[{low}]({s0:.1f}，证据: {ev or '同名'}；{ref}) {_desc_of(e, 50)}")
                     notes.append(
-                        f"阶段「{stage_name}」并列候选（打分相差≤10%）——请人工确认用哪个："
+                        f"阶段「{stage_name}」并列提名（词面分差≤10%，网关不裁决）——由执行 Agent 按任务语义裁决用哪个："
                         + "；".join(cards)
-                        + f"。确认后执行 `profile --stage-pref 「{stage_name}={cands[0][3]}」` 写入记忆，此后自动选用。")
+                        + f"。长期固定某一裁决可执行 `profile --stage-pref 「{stage_name}={cands[0][3]}」` 写入记忆，此后自动选用。")
                     for s0, _p, _f, low, e in cands[:3]:
                         stage_members[stage_name].append(e)
                         used.add(low)
                 else:
                     stage_members[stage_name].append(cands[0][4])
                     used.add(cands[0][3])
+                    if len(cands) >= 2:
+                        _alts = "、".join(f"[{it[3]}]({it[0]:.1f}) {_desc_of(it[4], 40)}" for it in cands[1:3])
+                        notes.append(
+                            f"阶段「{stage_name}」默认提名 [{cands[0][3]}]（词面最高分）；备选 {_alts}——"
+                            f"最终裁决权在执行 Agent：按任务语义改选备选时须 detail 加载并声明理由；"
+                            f"裁决长期稳定可 `profile --stage-pref 「{stage_name}=技能名」` 锁入记忆。")
             if not stage_members[stage_name]:
                 n_general += 1
                 notes.append(f"阶段「{stage_name}」检索无匹配技能 → 通用能力承接。")
@@ -291,9 +297,9 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence, prefs=None):
                 ref = "含参考资料" if e.get("has_references") else "无大体积参考"
                 cards.append(f"[{low}]({s0:.1f}，证据: {ev or '同名'}；{ref}) {_desc_of(e, 50)}")
             notes.append(
-                f"阶段「{stage_name}」并列候选（打分相差≤10%）——请人工确认用哪个："
+                f"阶段「{stage_name}」并列提名（词面分差≤10%，网关不裁决）——由执行 Agent 按任务语义裁决用哪个："
                 + "；".join(cards)
-                + f"。确认后执行 `profile --stage-pref 「{stage_name}={scored[0][3]}」` 写入记忆，此后自动选用。")
+                + f"。长期固定某一裁决可执行 `profile --stage-pref 「{stage_name}={scored[0][3]}」` 写入记忆，此后自动选用。")
             for s0, _p, _f, low, e in scored[:3]:
                 stage_members[stage_name].append(e)
                 used.add(low)
@@ -302,6 +308,12 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence, prefs=None):
         winner = scored[0]
         stage_members[stage_name].append(winner[4])
         used.add(winner[3].lower())
+        if len(scored) >= 2:
+            _alts = "、".join(f"[{it[3]}]({it[0]:.1f}) {_desc_of(it[4], 40)}" for it in scored[1:3])
+            notes.append(
+                f"阶段「{stage_name}」默认提名 [{winner[3]}]（词面最高分）；备选 {_alts}——"
+                f"最终裁决权在执行 Agent：按任务语义改选备选时须 detail 加载并声明理由；"
+                f"裁决长期稳定可 `profile --stage-pref 「{stage_name}=技能名」` 锁入记忆。")
 
     for stage_name, _q in LIFECYCLE_STAGES:
         members = stage_members[stage_name]
