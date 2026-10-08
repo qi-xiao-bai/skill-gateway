@@ -88,11 +88,31 @@ class MetaConsistencyTests(unittest.TestCase):
         PROTECTED = {"SKILL.md", "README.md", "使用说明.md", "conftest.py",
                      "skill_gateway.config.json", "skill_profile.json",
                      ".gitignore", ".skillignore", ".skillexclude",
-                     "available_skills.example.json", "platform_connectors.json"}
+                     "available_skills.example.json", "platform_connectors.json",
+                     "d3.v7.min.js", "TEST-EVIDENCE.md"}
         self.assertEqual(set(paths.LEGACY_OUTPUT_FILES) & PROTECTED, set())
         self.assertEqual(set(paths.RUNTIME_INPUT_FILES) & PROTECTED, set())
         for d in ("docs", "references", "templates", "tests", "scripts", "inputs"):
             self.assertNotIn(d, paths.CLEAN_DIR_SWEEP)
+        # 交付资产保护清单：必须存在、且与任何删除名单零交集（防"保护名单本身被污染"）
+        self.assertTrue(paths.CLEAN_PROTECTED_FILES, "保护清单不能为空")
+        self.assertEqual(
+            set(paths.CLEAN_PROTECTED_FILES)
+            & (set(paths.LEGACY_OUTPUT_FILES) | set(paths.RUNTIME_INPUT_FILES)),
+            set(), "保护清单内的交付资产绝不允许进入任何删除名单")
+
+    def test_6b_pack_carries_evidence_dirs(self):
+        """⑥b 参赛包必须携带评标证据目录：tests/（测试跑通证据）与 docs/
+        （演进 PRD）不得离开 pack 白名单/进入排除名单，conftest.py 同理
+        （pytest 依赖）——2026-10-08 用户发现参赛 zip 缺 14 个文件后确立。"""
+        import build_index as bi
+        self.assertNotIn("tests", bi.PACK_EXCLUDE_DIRS)
+        self.assertNotIn("docs", bi.PACK_EXCLUDE_DIRS)
+        self.assertIn("tests", bi.PACK_DIRS)
+        self.assertIn("docs", bi.PACK_DIRS)
+        self.assertIn("conftest.py", bi.PACK_TOP_FILES)
+        self.assertNotIn("conftest.py", bi.PACK_EXCLUDE_FILES)
+        self.assertIn("output", bi.PACK_EXCLUDE_DIRS)  # 运行产物照旧排除
 
     def test_7_all_temp_creations_use_skix_prefix(self):
         """⑦ 不放过一个测试遗留：所有临时目录/文件创建点必须用 skix- 前缀

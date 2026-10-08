@@ -265,19 +265,22 @@ def cmd_ledger(a):
 
 
 # pack 交付包口径：测试基建/开发文档/运行产物/缓存不上平台
-PACK_EXCLUDE_DIRS = {"tests", "docs", "output", "__pycache__", ".pytest_cache",
+# 只排除缓存/运行产物/本机清单——tests/ 与 docs/ 是评标证据（测试跑通 + 演进 PRD），
+# 必须随包分发（2026-10-08 用户发现参赛 zip 缺 tests/docs 后修正）
+PACK_EXCLUDE_DIRS = {"output", "__pycache__", ".pytest_cache",
                      ".omx", ".zcode", ".git", ".github", "node_modules",
                      "platform_mirror"}
-PACK_EXCLUDE_FILES = {"conftest.py", "available_skills.json", "platform_skills.json",
+PACK_EXCLUDE_FILES = {"available_skills.json", "platform_skills.json",
                       "agent_list.json", "skill-gateway.zip"}
 PACK_TOP_FILES = ("SKILL.md", "README.md", "使用说明.md", "skill_gateway.config.json",
-                  "skill_profile.json", ".skillignore", ".skillexclude", ".gitignore")
-PACK_DIRS = ("scripts", "references", "templates", "inputs")
+                  "skill_profile.json", ".skillignore", ".skillexclude", ".gitignore",
+                  ".zcodeignore", "conftest.py")
+PACK_DIRS = ("scripts", "references", "templates", "inputs", "tests", "docs")
 
 
 def cmd_pack(a):
-    """生成交付包 skill-gateway.zip：先 clean 清运行时产物，再按口径排除
-    测试基建/开发文档/缓存/本机清单，输出包内清单与大小供上传前核对。"""
+    """生成交付包 skill-gateway.zip：先 clean 清运行时产物，再排除
+    缓存/运行产物/本机清单——tests/ 与 docs/ 属评标证据随包分发，输出包内清单与大小供上传前核对。"""
     import zipfile
 
     print("[pack] 清理运行时产物 ...")
@@ -1296,15 +1299,26 @@ def cmd_clean(a):
     import shutil
 
     cleaned = []
+    # 交付资产保护闸：宁可漏删不可误删——命中 CLEAN_PROTECTED_FILES 的一律跳过并告警
+    _prot = [os.path.normpath(os.path.join(paths.ROOT, f))
+             for f in paths.CLEAN_PROTECTED_FILES]
+
+    def _rm_guarded(fp, label):
+        rel = os.path.relpath(fp, paths.ROOT).replace(os.sep, "/")
+        if rel in paths.CLEAN_PROTECTED_FILES:
+            print(f"  [保护] {rel} 命中交付资产保护清单，已跳过", file=sys.stderr)
+            return
+        try:
+            os.remove(fp)
+            cleaned.append(f"{label}/{os.path.basename(fp)}")
+        except Exception as ex:
+            print(f"  删除失败 {fp}: {ex}")
+
     # 1. 清理根目录下的遗留产物
     for fname in paths.LEGACY_OUTPUT_FILES:
         p = os.path.join(paths.ROOT, fname)
         if os.path.isfile(p):
-            try:
-                os.remove(p)
-                cleaned.append(f"root/{fname}")
-            except Exception as ex:
-                print(f"  删除失败 {p}: {ex}")
+            _rm_guarded(p, "root")
 
     # 2. 清理 output/ 目录：只删运行时产物名单内的文件，其余（含新增源数据）保留
     out_d = paths.out_dir()
@@ -1315,11 +1329,7 @@ def cmd_clean(a):
                 continue  # 非产物名单 = 源数据，绝不清理；.tmp 仅清原子写崩溃残留
             fp = os.path.join(out_d, fname)
             if os.path.isfile(fp):
-                try:
-                    os.remove(fp)
-                    cleaned.append(f"output/{fname}")
-                except Exception as ex:
-                    print(f"  删除失败 {fp}: {ex}")
+                _rm_guarded(fp, "output")
 
     # 2.4 环境本地登记表（inputs/ 运行时状态）：源目录不该持有，clean 一并清除
     inputs_d = os.path.join(paths.ROOT, "inputs")
@@ -1327,11 +1337,7 @@ def cmd_clean(a):
         for fname in paths.RUNTIME_INPUT_FILES:
             fp = os.path.join(inputs_d, fname)
             if os.path.isfile(fp):
-                try:
-                    os.remove(fp)
-                    cleaned.append(f"inputs/{fname}")
-                except Exception as ex:
-                    print(f"  删除失败 {fp}: {ex}", file=sys.stderr)
+                _rm_guarded(fp, "inputs")
 
     # 2.5 平台桥接易失层（inputs/platform_mirror）：可随时由 bridge 重建
     mirror = os.path.join(paths.ROOT, "inputs", "platform_mirror")
@@ -1344,9 +1350,13 @@ def cmd_clean(a):
 
     # 3. 清理编译缓存与会话工具残留（.zcode 会话计划/.omx 计划文件）
     for root, dirs, _files in os.walk(paths.ROOT):
-        for d in ("__pycache__", ".pytest_cache", ".zcode", ".omx"):
+        for d in paths.CLEAN_DIR_SWEEP:
             if d in dirs:
                 target_dir = os.path.join(root, d)
+                if any(pp.startswith(target_dir + os.sep) for pp in _prot):
+                    print(f"  [保护] {d} 目录内含交付资产保护清单文件，跳过整目录清理",
+                          file=sys.stderr)
+                    continue
                 try:
                     shutil.rmtree(target_dir, ignore_errors=True)
                     cleaned.append(os.path.relpath(target_dir, paths.ROOT))
@@ -1688,7 +1698,7 @@ COMMANDS = [
     {
         "name": "pack",
         "usage": "pack",
-        "help": "生成交付包 skill-gateway.zip（自动 clean；排除测试/缓存/运行产物与本机清单）",
+        "help": "生成交付包 skill-gateway.zip（自动 clean；含 tests/docs 评标证据，仅排除缓存/运行产物/本机清单）",
         "handler": "cmd_pack",
         "args": [],
     },
