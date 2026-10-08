@@ -142,6 +142,27 @@ def _pure_vocab(name):
     return bool(toks) and toks <= _LIFECYCLE_VOCAB
 
 
+# 开发任务意图信号（动词+对象双命中才算开发语义——单信号防不住"开发票"这类假阳性：
+# 开发票 含"开发"但不含对象词，不会误切；证据词随编排输出，可审计、可用 --graph 逃生）
+_DEV_ACTION_TERMS = ("开发", "实现", "编写", "写一个", "做一个", "修复", "新增",
+                     "重构", "部署", "上线", "加一个", "添加", "build", "implement",
+                     "develop", "fix", "refactor", "deploy")
+_DEV_OBJECT_TERMS = ("技能", "功能", "命令", "页面", "接口", "服务", "工具",
+                     "脚本", "模块", "应用", "系统", "报表", "skill", "feature",
+                     "command", "tool", "module", "app")
+
+
+def _dev_task_signals(query):
+    """证据式开发任务识别：动词与对象词都命中才算开发语义。
+    返回 (is_dev, evidence)；evidence 随编排 basis 输出供审计与逃生判断。"""
+    q = (query or "").lower()
+    hits_a = [t for t in _DEV_ACTION_TERMS if t in q]
+    hits_o = [t for t in _DEV_OBJECT_TERMS if t in q]
+    if hits_a and hits_o:
+        return True, hits_a[:3] + hits_o[:2]
+    return False, []
+
+
 def _domain_locked(name, task_terms):
     """名字里**存在**任务 query 之外领域词元的技能 = 领域锁定，不进生命周期阶段
     （salesforce-develop 混着流程词 develop 也没用——salesforce 这个领域词元在
@@ -337,8 +358,9 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence, prefs=None):
 
 def build_pipeline(query, entries=None, edges=None, seed_top=SEED_TOP, _retried=False,
                    include_off_list=False, agent_only=False, lifecycle=None):
-    """lifecycle=True 强制按开发生命周期契约编排；None=按 DEV_TASK_KEYWORDS 自动
-    检测；False 强制图谱模式。调用方 agent 知道自己的任务类型，可直接声明。"""
+    """lifecycle=True 强制生命周期编排；None=证据式意图识别自动判定（动词+对象
+    双信号，证据随 basis 输出）；False 强制图谱模式（--graph）。显式声明优先于
+    自动识别——调用方 agent 知道自己的任务类型时仍推荐直接声明 --lifecycle。"""
     """图谱驱动编排：
     1. retrieval.search 按任务检索种子技能（证据 = 命中词）；
     2. 沿 depends_on 边把被依赖技能纳入子图（支撑节点）；
@@ -388,16 +410,26 @@ def build_pipeline(query, entries=None, edges=None, seed_top=SEED_TOP, _retried=
 
     # 开发任务生命周期契约（代码化）：检测到开发任务且绑定集能支撑 ≥3 个阶段时，
     # 按生命周期编排，缺口阶段声明通用能力承接——开发任务不再只命中一个技能
-    if lifecycle:
+    # 三层判定：显式 --lifecycle > 自动意图识别（lifecycle=None）> --graph 强制图谱
+    _auto_ev = []
+    if lifecycle is None:
+        _is_dev, _auto_ev = _dev_task_signals(query)
+    else:
+        _is_dev = bool(lifecycle)
+    if _is_dev:
         lc_stages, lc_notes, n_general = _lifecycle_stages(
             query, entries, seeds, dict(evidence),
             prefs=(load_skill_profile() or {}).get("stage_preferences") or {})
         if len(lc_stages) >= 3:
+            basis = (f"开发任务生命周期契约映射 {len(lc_stages)} 阶段"
+                     f"（通用承接 {n_general} 阶段）")
+            if _auto_ev:
+                basis += (f"；意图识别自动进入（证据词：{'、'.join(_auto_ev)}）——"
+                          "如误判请用 --graph 强制图谱模式")
             return {
                 "task": query,
                 "mode": "lifecycle",
-                "basis": (f"开发任务生命周期契约映射 {len(lc_stages)} 阶段"
-                          f"（通用承接 {n_general} 阶段）"),
+                "basis": basis,
                 "stages": lc_stages,
                 "skills": [n for st_ in lc_stages for n in st_["skill_names"]],
                 "notes": lc_notes + twin_notes,

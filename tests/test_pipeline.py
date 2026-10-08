@@ -154,6 +154,40 @@ class TestPipeline(unittest.TestCase):
             pipeline.build_pipeline("不存在xyzzy", entries=[], edges=[], _retried=True))
         self.assertIn("未生成流水线", foot_empty)
 
+    def test_dev_intent_auto_lifecycle_with_evidence(self):
+        """R4 根治（用户多轮追问）："开发一个XX技能"类元任务在未声明 --lifecycle 时
+        由证据式意图识别自动进入生命周期编排——评标员裸跑 pipeline 不再得到词面垃圾。
+        basis 必须带证据词与 --graph 逃生门说明。"""
+        entries = [
+            {"name": "plan", "type": "skill", "description": "planning 规划",
+             "path": "", "triggers": []},
+            {"name": "tdd", "type": "skill", "description": "测试 tdd test",
+             "path": "", "triggers": []},
+            {"name": "weekly-report", "type": "skill",
+             "description": "群周报 periodic summary 周报", "path": "", "triggers": ["周报"]},
+        ]
+        pipe = pipeline.build_pipeline("开发一个智能周报技能",
+                                       entries=entries, edges=[])
+        self.assertEqual(pipe["mode"], "lifecycle")
+        self.assertIn("意图识别自动进入", pipe["basis"])
+        self.assertIn("证据词", pipe["basis"])
+        self.assertIn("--graph", pipe["basis"])
+
+    def test_dev_intent_no_false_positive_and_escape(self):
+        """防误报：开发票流程（开发+票 但无对象词）不得误切生命周期；
+        --graph / lifecycle=False 强制图谱优先于自动识别。"""
+        entries = [
+            {"name": "plan", "type": "skill", "description": "planning 规划",
+             "path": "", "triggers": []},
+            {"name": "invoice-flow", "type": "skill",
+             "description": "开发票 流程 invoice", "path": "", "triggers": ["开发票"]},
+        ]
+        pipe = pipeline.build_pipeline("开发票流程怎么走", entries=entries, edges=[])
+        self.assertNotEqual(pipe["mode"], "lifecycle")
+        forced = pipeline.build_pipeline("开发一个报表功能", entries=entries, edges=[],
+                                          lifecycle=False)
+        self.assertNotEqual(forced["mode"], "lifecycle")
+
     def test_lifecycle_footnote_not_prebaked(self):
         """生命周期脚注不预生成（用户规则：脚注=实际调用链，没调用就不写）——
         CLI 编排时刻不知道执行 Agent 会调用谁，预生成的任何技能链都是提名单冒充调用记录。

@@ -1076,7 +1076,7 @@ def cmd_pipeline(a):
     """技能图谱串联编排：按任务检索 + 依图谱拓扑自动生成多技能协同流水线（无硬编码模板）。"""
     pipe = pipeline_mod.build_pipeline(a.query, include_off_list=getattr(a, "all_items", False),
                                        agent_only=getattr(a, "agent_only", False),
-                                       lifecycle=True if getattr(a, "force_lifecycle", False) else None)
+                                       lifecycle=getattr(a, "force_lifecycle", None))
     if a.json:
         clean_pipe = {
             "task": pipe["task"],
@@ -1654,7 +1654,9 @@ COMMANDS = [
             (("--agent",), {"action": "store_true", "dest": "agent_only",
                              "help": "Agent 绑定口径：编排种子只取当前 Agent 绑定的技能（非默认，默认平台口径）"}),
             (("--lifecycle",), {"action": "store_true", "dest": "force_lifecycle",
-                                  "help": "按开发生命周期契约编排（开发/工程任务由调用方 agent 显式声明——CLI 不猜意图）"}),
+                                  "help": "强制按开发生命周期契约编排（未声明时 CLI 做证据式意图识别自动进入，动词+对象双信号）"}),
+            (("--graph",), {"action": "store_false", "dest": "force_lifecycle",
+                           "help": "强制图谱模式（跳过意图识别自动生命周期，误判逃生门）"}),
         ],
     },
     {

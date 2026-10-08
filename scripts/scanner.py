@@ -193,6 +193,26 @@ def available_list_entries():
     return _entries_from_items(items)
 
 
+def gateway_self_skmd_path():
+    """当前运行的网关自身 SKILL.md（scanner.py 位于 scripts/，父目录即技能根）。"""
+    return os.path.normpath(
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                     "SKILL.md"))
+
+
+def heal_self_entry(entry):
+    """网关自条目自洽（评标 P2 建议）：清单导入带来的 path 指向沙箱缓存等跨会话
+    失效位置时，detail 取不到全文（stats"无本地全文"）。path 失效即重指到当前
+    运行的网关自身 SKILL.md。返回是否发生修复。"""
+    if (entry.get("name") or "").lower() != "skill-gateway":
+        return False
+    p = entry.get("path") or ""
+    if p and os.path.isfile(p):
+        return False
+    entry["path"] = gateway_self_skmd_path()
+    return True
+
+
 def _entries_from_items(items, source_tag="available-list"):
     """清单项 → 索引记录（visibility/agent_bound/category/platform/agents 透传）。"""
     cur_agent = available_list_agent()
@@ -254,6 +274,7 @@ def _entries_from_items(items, source_tag="available-list"):
         if blocked:
             entry["excluded"] = True
             entry["exclude_reason"] = f"blocked（平台绑定状态: {status}，检索/编排不出现）"
+        heal_self_entry(entry)
         out.append(entry)
     return out
 

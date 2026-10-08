@@ -135,15 +135,35 @@ def graph_report_text(entries, edges, diag=None):
     by_id = diag["by_id"]
     lines = ["\n## 图谱质量审查\n"]
 
-    # 1. 孤立节点
+    # 1. 孤立节点治理工单（评标 P3 建议）：按使用频次排序，缺什么/建议动作——高频孤立者优先补
     isolated = diag["isolated"]
     if isolated:
-        lines.append(f"### 孤立节点（{len(isolated)} 个）")
-        lines.append("没有任何关系边连接，可能缺少描述或触发词：\n")
-        for e in isolated[:15]:
-            lines.append(f"- **{e['name']}**: {(e.get('description') or '')[:60]}")
-        if len(isolated) > 15:
-            lines.append(f"- ... 还有 {len(isolated) - 15} 个")
+        try:
+            import proactive as _pro
+            _freq = (_pro.load_proactive_state() or {}).get("skill_frequency", {}) or {}
+        except Exception:
+            _freq = {}
+        iso_sorted = sorted(
+            isolated,
+            key=lambda e: (-int(_freq.get(e["name"].lower(), 0) or 0), e["name"].lower()))
+        lines.append(f"### 孤立节点治理工单（{len(isolated)} 个，高频使用者在前）")
+        lines.append("孤立 = 无任何关系边。缺什么补什么：\n")
+        for e in iso_sorted[:15]:
+            lacks = []
+            if not (e.get("triggers") or []):
+                lacks.append("触发词")
+            if not (e.get("description") or "").strip():
+                lacks.append("描述")
+            freq = int(_freq.get(e["name"].lower(), 0) or 0)
+            tag = f"（使用 {freq} 次）" if freq else "（未使用）"
+            if lacks:
+                lines.append(f"- **{e['name']}**{tag}：缺 {'、'.join(lacks)}")
+                lines.append("  建议：补内容后 update 重建——有真实描述/触发词即可自动连出 overlap 边")
+            else:
+                lines.append(f"- **{e['name']}**{tag}：内容齐全仍孤立")
+                lines.append("  建议：人工补 depends_on 边，或在相关技能的描述/触发词中互相提及")
+        if len(iso_sorted) > 15:
+            lines.append(f"- ... 还有 {len(iso_sorted) - 15} 个")
         lines.append("")
     else:
         lines.append("- 无孤立节点 ✓\n")

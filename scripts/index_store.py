@@ -602,6 +602,8 @@ def _update_from_available_list(old, avail):
         else:
             kept.append(nm)
             e = o  # 未变 → 复用旧记录，保留原 mtime 与内容索引指纹
+            if scanner.heal_self_entry(e):
+                updated.append(nm)  # 自条目 path 失效修复，计变更保证落盘
         out.append(e)
     removed = {n for n in old_list if n not in list_names}
     ready_bases = {e["name"].lower() for e in avail

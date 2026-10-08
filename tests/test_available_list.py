@@ -126,6 +126,28 @@ class AvailableListTests(unittest.TestCase):
             if old_env is not None:
                 os.environ["SKILL_GATEWAY_AGENT"] = old_env
 
+    def test_self_entry_path_self_heal(self):
+        """R3 网关自洽（评标 P2）：清单里 skill-gateway 的 path 指向失效位置时，
+        建条目/合并复用都会重指当前运行网关自身的 SKILL.md，detail 全文可取。"""
+        os.makedirs(os.path.join(scanner.ROOT, "inputs"), exist_ok=True)
+        with open(os.path.join(scanner.ROOT, "inputs", "available_skills.json"),
+                  "w", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "skills": [
+                    {"name": "skill-gateway", "description": "gateway 网关",
+                     "path": os.path.join(scanner.ROOT, "stale-cache", "SKILL.md"),
+                     "agents": ["zcode"]},
+                ]}, ensure_ascii=False))
+        ents = scanner.available_list_entries()
+        self.assertEqual(ents[0]["name"], "skill-gateway")
+        self.assertTrue(os.path.isfile(ents[0]["path"]), "自愈后 path 必须指向真实存在的 SKILL.md")
+        # 合并复用路径：旧条目带失效 path，二次合合同样自愈
+        old = [dict(ents[0])]
+        old[0]["path"] = "/nonexistent/sandbox-cache/SKILL.md"
+        merged, _st = index_store._update_from_available_list(old, ents)
+        by = {e["name"]: e for e in merged}
+        self.assertTrue(os.path.isfile(by["skill-gateway"]["path"]))
+
     def test_description_zh_flows_registry_to_index(self):
         """登记表里的 description_zh 必须进索引条目并在三段合并中存活——
         dashboard 中文/双语对照的数据源就是索引里的这个字段，断链=翻译永远不显示。"""
