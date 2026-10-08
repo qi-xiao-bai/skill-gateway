@@ -274,7 +274,7 @@ PACK_EXCLUDE_FILES = {"available_skills.json", "platform_skills.json",
                       "agent_list.json", "skill-gateway.zip"}
 PACK_TOP_FILES = ("SKILL.md", "README.md", "使用说明.md", "skill_gateway.config.json",
                   "skill_profile.json", ".skillignore", ".skillexclude", ".gitignore",
-                  ".zcodeignore", "conftest.py")
+                  "conftest.py")
 PACK_DIRS = ("scripts", "references", "templates", "inputs", "tests", "docs")
 
 
@@ -293,6 +293,10 @@ def cmd_pack(a):
             if os.path.isfile(fp):
                 z.write(fp, rel)
                 count += 1
+        out_readme = os.path.join(paths.ROOT, "output", "README.md")
+        if os.path.isfile(out_readme):
+            z.write(out_readme, "output/README.md")
+            count += 1
         for dname in PACK_DIRS:
             base = os.path.join(paths.ROOT, dname)
             if not os.path.isdir(base):
