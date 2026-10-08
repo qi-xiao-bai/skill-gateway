@@ -17,9 +17,9 @@ SEED_TOP = 6  # 任务检索取几个种子技能
 LIFECYCLE_STAGES = (
     ("拆解规划", "需求分析 拆解规划 requirement analysis planning breakdown"),
     ("资料核查", "资料核查 文档查询 documentation lookup reference docs"),
-    ("编码实现", "编码 开发实现 implementation coding development develop"),
-    ("测试验证", "测试验证 testing validation test tests"),
-    ("修错排查", "修错排查 debugging debug troubleshoot bug"),
+    ("编码实现", "编码 功能开发 开发实现 feature development implementation coding develop"),
+    ("测试验证", "测试验证 红绿回归 tdd testing validation test tests"),
+    ("修错排查", "修错排查 诊断 debugging debug troubleshoot bug diagnose"),
     ("重构治理", "重构 治理 refactor 优化 optimizer"),
     ("清理瘦身", "清理 瘦身 冗余 deslop cleanup slop"),
     ("审查把关", "代码审查 评审把关 code review"),
@@ -135,6 +135,13 @@ _LIFECYCLE_VOCAB = {"plan", "planning", "analysis", "requirement", "requirements
                     "ai", "optimizer", "optimize", "optimization", "research", "deep"}
 
 
+def _pure_vocab(name):
+    """名字词元全部属于生命周期流程词汇表 = 流程技能（code-review/diagnose 这类），
+    应按名称亲和认领进各自阶段，而不是跟着任务检索种子整批涌进"编码实现"。"""
+    toks = {t for t in re.split(r"[^a-z0-9]+", (name or "").lower()) if len(t) >= 2}
+    return bool(toks) and toks <= _LIFECYCLE_VOCAB
+
+
 def _domain_locked(name, task_terms):
     """名字里**存在**任务 query 之外领域词元的技能 = 领域锁定，不进生命周期阶段
     （salesforce-develop 混着流程词 develop 也没用——salesforce 这个领域词元在
@@ -154,9 +161,16 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence, prefs=None):
     stages, notes, used = [], [], set()
     domain_members = []
     for e in domain_seeds:
-        if e["name"].lower() not in used:
-            domain_members.append(e)
-            used.add(e["name"].lower())
+        low = e["name"].lower()
+        if low in used:
+            continue
+        # 纯流程技能（code-*/diagnose/tdd…）不预占 used、不整批进编码实现——
+        # 否则"修改代码"类查询的检索种子恰好就是整排生命周期技能，编码实现吞下全部、
+        # 审查/安全/修错诸阶段全部饿死。只有真领域种子（salesforce/dingtalk…）作编码上下文。
+        if _pure_vocab(e.get("name", "")):
+            continue
+        domain_members.append(e)
+        used.add(low)
     n_general = 0
     task_terms = retrieval.terms(query)
     weights = retrieval.idf(entries)
@@ -199,18 +213,14 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence, prefs=None):
 
     stage_members = {name: [] for name, _q in LIFECYCLE_STAGES}
     stage_members = {name: [] for name, _q in LIFECYCLE_STAGES}
-    for e in domain_seeds:
+    for e in domain_members:
         stage_members["编码实现"].append(e)
     by_name = {e["name"].lower(): e for e in entries}
-
-    def _pure_vocab(low):
-        toks = {t for t in re.split(r"[^a-z0-9]+", low) if len(t) >= 2}
-        return bool(toks) and toks <= _LIFECYCLE_VOCAB
 
     for stage_name, stage_query in LIFECYCLE_STAGES:
         claimants = sorted(claim_pool.get(stage_name) or [])
         if not claimants:
-            hits = retrieval.search(entries, stage_query, top=1)
+            hits = retrieval.search(entries, stage_query, top=8)
             for _s, e, m in hits:
                 low = e["name"].lower()
                 if low in used or _domain_locked(e.get("name", ""), task_terms):
@@ -244,12 +254,29 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence, prefs=None):
             continue
 
         if stage_name == "编码实现":
-            # 编码实现 = 领域种子（任务检索已在位）+ 纯流程名技能；带领域词的
-            # 认领者（如 salesforce-develop 混进网页游戏任务）一律不进
-            for s0, _p, _f, low, e in scored:
-                if _pure_vocab(low) and low not in {m["name"].lower() for m in stage_members[stage_name]}:
-                    stage_members[stage_name].append(e)
-                    used.add(low)
+            # 编码实现 = 真领域种子（已在位）+ 一个流程技能胜者；带领域词的认领者
+            # （如 salesforce-develop 混进网页游戏任务）已在认领层被 _domain_locked 拦下。
+            # 同阶段只留最强一个（≤10% 并列 → 交人工确认，与其他阶段同规则）
+            in_stage = {m["name"].lower() for m in stage_members[stage_name]}
+            cands = [it for it in scored if it[3] not in in_stage]
+            if cands:
+                tie = (cands[0][0] - cands[1][0]) <= 0.10 * max(cands[0][0], 1e-6) if len(cands) >= 2 else False
+                if tie:
+                    cards = []
+                    for s0, _p, _f, low, e in cands[:3]:
+                        ev = "、".join(evidence.get(low) or [])[:30]
+                        ref = "含参考资料" if e.get("has_references") else "无大体积参考"
+                        cards.append(f"[{low}]({s0:.1f}，证据: {ev or '同名'}；{ref}) {_desc_of(e, 50)}")
+                    notes.append(
+                        f"阶段「{stage_name}」并列候选（打分相差≤10%）——请人工确认用哪个："
+                        + "；".join(cards)
+                        + f"。确认后执行 `profile --stage-pref 「{stage_name}={cands[0][3]}」` 写入记忆，此后自动选用。")
+                    for s0, _p, _f, low, e in cands[:3]:
+                        stage_members[stage_name].append(e)
+                        used.add(low)
+                else:
+                    stage_members[stage_name].append(cands[0][4])
+                    used.add(cands[0][3])
             if not stage_members[stage_name]:
                 n_general += 1
                 notes.append(f"阶段「{stage_name}」检索无匹配技能 → 通用能力承接。")
