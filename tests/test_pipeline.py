@@ -154,6 +154,23 @@ class TestPipeline(unittest.TestCase):
             pipeline.build_pipeline("不存在xyzzy", entries=[], edges=[], _retried=True))
         self.assertIn("未生成流水线", foot_empty)
 
+    def test_lifecycle_footnote_is_nomination_not_dispatch(self):
+        """生命周期脚注是提名留痕不是调用记录：必须带"编排提名"与"提名≠调用"标记，
+        实际采纳归执行 Agent 台账（用户规则：只显示实际调用的）。"""
+        entries = [
+            {"name": "plan", "type": "skill", "description": "planning 规划",
+             "path": "", "triggers": []},
+            {"name": "tdd", "type": "skill", "description": "测试 tdd test",
+             "path": "", "triggers": []},
+        ]
+        pipe = pipeline.build_pipeline("开发实现 planning 规划 test 测试",
+                                        entries=entries, edges=[], lifecycle=True)
+        if pipe["mode"] == "lifecycle":
+            foot = pipeline.footnote_text(pipe)
+            self.assertIn("编排提名", foot)
+            self.assertIn("提名≠调用", foot)
+            self.assertIn("台账", foot)
+
     # ── 检索质量回归（原测试保留） ──────────────────────────────────────────
     def test_route_composite_task(self):
         cmd, hits = route.route("开发一个用户认证需求")

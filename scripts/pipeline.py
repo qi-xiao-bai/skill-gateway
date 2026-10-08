@@ -617,8 +617,9 @@ def footnote_text(pipe):
         chain = " → ".join(
             f"[{st['skill_names'][0] if st['skill_names'] else '通用能力承接'}]"
             for st in pipe["stages"])
-        return (f"[skill-gateway] 开发生命周期编排: {chain} | "
-                f"生命周期契约 {len(pipe['stages'])} 阶段 | 缺口阶段已声明通用承接")
+        return (f"[skill-gateway] 开发生命周期编排提名: {chain} | "
+                f"生命周期契约 {len(pipe['stages'])} 阶段 | 缺口阶段已声明通用承接 | "
+                "提名≠调用，实际采纳以执行 Agent 台账为准")
     chain = " → ".join(f"[{'、'.join(st['skill_names'])}]" for st in pipe["stages"])
     return (
         f"[skill-gateway] 技能串联编排: {chain} | 图谱拓扑 {len(pipe['stages'])} 阶段"
