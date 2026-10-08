@@ -595,11 +595,22 @@ def format_pipeline_markdown(pipe):
         "4. **阶段留痕验证**：阶段交接时简要总结当前产物，并告知用户即将流转至下一技能。\n"
     )
 
-    lines.append("## 5. 留痕脚注（原样附在最终答复末尾，不得改写或省略）")
-    lines.append("")
-    lines.append("```text")
-    lines.append(footnote_text(pipe))
-    lines.append("```")
+    foot = footnote_text(pipe)
+    if foot:
+        lines.append("## 5. 留痕脚注（原样附在最终答复末尾，不得改写或省略）")
+        lines.append("")
+        lines.append("```text")
+        lines.append(foot)
+        lines.append("```")
+    else:
+        lines.append("## 5. 留痕脚注（本模式不预生成——按实际调用链生成）")
+        lines.append("")
+        lines.append("生命周期编排的提名单不进脚注。执行 Agent 在答复末尾按**真实调用**输出：")
+        lines.append("```text")
+        lines.append("[skill-gateway] 调用链: [实际加载的技能A] → [实际加载的技能B]")
+        lines.append("```")
+        lines.append("只列真实 `detail` 加载并执行的技能（按调用顺序，可被 hit-ledger 审计对账）；")
+        lines.append("未调用任何技能 → 不输出脚注。编造调用链 = 调度失职。")
     return "\n".join(lines)
 
 
@@ -614,12 +625,9 @@ def footnote_text(pipe):
             "由执行 Agent 甄别采纳"
         )
     if pipe["mode"] == "lifecycle":
-        chain = " → ".join(
-            f"[{st['skill_names'][0] if st['skill_names'] else '通用能力承接'}]"
-            for st in pipe["stages"])
-        return (f"[skill-gateway] 开发生命周期编排提名: {chain} | "
-                f"生命周期契约 {len(pipe['stages'])} 阶段 | 缺口阶段已声明通用承接 | "
-                "提名≠调用，实际采纳以执行 Agent 台账为准")
+        # 不预生成：CLI 在编排时刻不可能知道执行 Agent 最终调用谁——
+        # 脚注=实际调用链，由执行 Agent 按真实 detail 加载生成（工作单第 5 节有指示）
+        return ""
     chain = " → ".join(f"[{'、'.join(st['skill_names'])}]" for st in pipe["stages"])
     return (
         f"[skill-gateway] 技能串联编排: {chain} | 图谱拓扑 {len(pipe['stages'])} 阶段"

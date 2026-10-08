@@ -154,9 +154,10 @@ class TestPipeline(unittest.TestCase):
             pipeline.build_pipeline("不存在xyzzy", entries=[], edges=[], _retried=True))
         self.assertIn("未生成流水线", foot_empty)
 
-    def test_lifecycle_footnote_is_nomination_not_dispatch(self):
-        """生命周期脚注是提名留痕不是调用记录：必须带"编排提名"与"提名≠调用"标记，
-        实际采纳归执行 Agent 台账（用户规则：只显示实际调用的）。"""
+    def test_lifecycle_footnote_not_prebaked(self):
+        """生命周期脚注不预生成（用户规则：脚注=实际调用链，没调用就不写）——
+        CLI 编排时刻不知道执行 Agent 会调用谁，预生成的任何技能链都是提名单冒充调用记录。
+        实际调用链脚注由执行 Agent 按真实 detail 加载生成，hit-ledger 可对账。"""
         entries = [
             {"name": "plan", "type": "skill", "description": "planning 规划",
              "path": "", "triggers": []},
@@ -166,10 +167,9 @@ class TestPipeline(unittest.TestCase):
         pipe = pipeline.build_pipeline("开发实现 planning 规划 test 测试",
                                         entries=entries, edges=[], lifecycle=True)
         if pipe["mode"] == "lifecycle":
-            foot = pipeline.footnote_text(pipe)
-            self.assertIn("编排提名", foot)
-            self.assertIn("提名≠调用", foot)
-            self.assertIn("台账", foot)
+            self.assertEqual(pipeline.footnote_text(pipe), "")
+            md = pipeline.format_pipeline_markdown(pipe)
+            self.assertIn("调用链", md)
 
     # ── 检索质量回归（原测试保留） ──────────────────────────────────────────
     def test_route_composite_task(self):
