@@ -697,7 +697,8 @@ class TestPipeline(unittest.TestCase):
 
 
     def test_lifecycle_tie_asks_and_pref_remembers(self):
-        """并列候选（分差≤10%）→ 交人工确认并提示写入记忆；有记忆偏好 → 自动选用。"""
+        """并列提名（词面分差≤10%）→ 网关不裁决，交执行 Agent 按任务语义裁决，
+        并提示可 --stage-pref 长期锁定；有记忆偏好 → 自动选用。"""
         entries = [
             {"name": "plan-skill", "type": "skill",
              "description": "需求分析 拆解规划 requirement analysis planning", "triggers": ["规划"]},
@@ -709,8 +710,8 @@ class TestPipeline(unittest.TestCase):
         stages, notes, _n = pipeline._lifecycle_stages(
             "重构 治理 refactor cleanup", entries, [], {})
         st = next(s for s in stages if s["lifecycle"] == "重构治理")
-        self.assertGreaterEqual(len(st["skill_names"]), 2)  # 并列候选都列出
-        self.assertTrue(any("人工确认" in n for n in notes))
+        self.assertGreaterEqual(len(st["skill_names"]), 2)  # 并列提名都列出
+        self.assertTrue(any("执行 Agent 按任务语义裁决" in n for n in notes))
         self.assertTrue(any("stage-pref" in n for n in notes))
         # 记忆偏好 → 自动选用，不再并列
         stages2, notes2, _n2 = pipeline._lifecycle_stages(
