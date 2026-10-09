@@ -148,6 +148,28 @@ class AvailableListTests(unittest.TestCase):
         by = {e["name"]: e for e in merged}
         self.assertTrue(os.path.isfile(by["skill-gateway"]["path"]))
 
+    def test_self_heal_verifies_target_exists(self):
+        """P0 根治（评标第 8 轮实抓）：自愈目标必须存在性验证——平台执行形态下
+        从脚本位置推导的包根可能落空（脚本从会话/临时目录运行），"修复"写出
+        第二条死路径。两级候选：脚本推导 → paths.ROOT 兜底；都落空不治（诚实，
+        doctor 继续报告），绝不写出未经验证的路径。"""
+        import paths as _paths
+        # 场景 A：真实环境——自愈目标必须是磁盘上真实存在的文件
+        self.assertTrue(os.path.isfile(scanner.gateway_self_skmd_path()))
+        # 场景 B：候选全落空 → heal 拒绝动刀（返回 False，原 path 保留）
+        orig = scanner.gateway_self_skmd_path
+        scanner.gateway_self_skmd_path = lambda: ""
+        try:
+            e = {"name": "skill-gateway", "path": "/dead/session-cache/SKILL.md"}
+            self.assertFalse(scanner.heal_self_entry(e))
+            self.assertEqual(e["path"], "/dead/session-cache/SKILL.md")
+        finally:
+            scanner.gateway_self_skmd_path = orig
+        # 场景 C：正常自愈后落盘的 path 必须可通过 isfile 检查（不再是"信任推导"）
+        e2 = {"name": "skill-gateway", "path": "/dead/old/SKILL.md"}
+        self.assertTrue(scanner.heal_self_entry(e2))
+        self.assertTrue(os.path.isfile(e2["path"]))
+
     def test_description_zh_flows_registry_to_index(self):
         """登记表里的 description_zh 必须进索引条目并在三段合并中存活——
         dashboard 中文/双语对照的数据源就是索引里的这个字段，断链=翻译永远不显示。"""
