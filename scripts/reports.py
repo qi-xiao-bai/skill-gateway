@@ -42,8 +42,9 @@ def stats_text(entries, edges=None, registry_missing=None):
     """索引统计 = **覆盖口径**：这份索引覆盖了什么、每类多少、缺什么。
     `edges=None` 表示索引里没有关系边（旧版索引或还没重建）。"""
     cov = index_store.coverage(entries)
+    import datetime as _dt
     out = [f"# 索引统计（覆盖口径）：共 {cov['total']} 项"
-           f"（skill {cov['skill']} / mcp {cov['mcp']}）", ""]
+           f"（skill {cov['skill']} / mcp {cov['mcp']}）（快照 {_dt.datetime.now():%Y-%m-%d %H:%M:%S}）", ""]
 
     out.append("## 按来源（谁贡献了多少）")
     for s, c in cov["by_source"].items():

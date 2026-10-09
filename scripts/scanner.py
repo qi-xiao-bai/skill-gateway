@@ -194,10 +194,22 @@ def available_list_entries():
 
 
 def gateway_self_skmd_path():
-    """当前运行的网关自身 SKILL.md（scanner.py 位于 scripts/，父目录即技能根）。"""
-    return os.path.normpath(
+    """当前运行的网关自身 SKILL.md，两级候选按存在性择取（评标第 8 轮实抓：
+    平台执行形态下脚本可能从会话/临时目录运行，"从脚本位置推导包根"会落空，
+    曾把死路径换成另一条死路径）：
+    ① scripts/ 上推一级（常规包形态：scanner.py 在 <包根>/scripts/ 下）；
+    ② paths.ROOT（配置口径的包根——执行目录漂移时的兜底）。
+    都不存在返回空串：heal 拒绝落刀，诚实留给 doctor 继续报告。"""
+    import paths as _paths
+    candidates = (
         os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                     "SKILL.md"))
+                     "SKILL.md"),
+        os.path.join(_paths.ROOT, "SKILL.md"),
+    )
+    for c in candidates:
+        if os.path.isfile(c):
+            return os.path.normpath(c)
+    return ""
 
 
 def heal_self_entry(entry):
@@ -209,7 +221,10 @@ def heal_self_entry(entry):
     p = entry.get("path") or ""
     if p and os.path.isfile(p):
         return False
-    entry["path"] = gateway_self_skmd_path()
+    target = gateway_self_skmd_path()
+    if not target:
+        return False  # 本环境找不到自身 SKILL.md：不动刀，绝不写出未经验证的路径
+    entry["path"] = target
     return True
 
 

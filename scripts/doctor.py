@@ -49,7 +49,7 @@ def report_text(entries, sample=10):
     f = diagnose(entries)
     hard = [x for x in f if x[0] not in SOFT]
     soft = [x for x in f if x[0] in SOFT]
-    lines = [f"# 技能体检（doctor）：{len(entries)} 项",
+    lines = [f"# 技能体检（doctor）：{len(entries)} 项（快照 {__import__('datetime').datetime.now():%Y-%m-%d %H:%M:%S}）",
              f"硬问题 {len(hard)} 条（坏/空描述、路径缺失、重名）｜软建议 {len(soft)} 条（缺触发词、超大技能）"]
     lines.append("\n## 硬问题（建议修）")
     if hard:

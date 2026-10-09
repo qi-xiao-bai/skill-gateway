@@ -341,6 +341,8 @@ def cmd_import(a):
 
 def cmd_update(a):
     broad = True if a.broad else "auto"
+    import datetime as _dt
+    print(f"[update] 快照 {_dt.datetime.now():%Y-%m-%d %H:%M:%S}：开始增量同步")
     es, st = index_store.update_index(broad)
     full = bool(a.full)
     es2, healed = index_store.heal_if_self_only(es, mode="full" if full else "list")
