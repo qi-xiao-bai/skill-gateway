@@ -35,7 +35,10 @@ def _namelist(names, limit=8):
     return f"{shown} …(共 {len(names)} 个)" if len(names) > limit else shown
 
 
-def stats_text(entries, edges=None):
+def stats_text(entries, edges=None, registry_missing=None):
+    """registry_missing：是否缺权威登记表（available_skills.json）。None=自动探测。
+    缺表时一切条目按全机兜底口径视为可用——必须在报告里显著声明，防止被误读为
+    权威平台口径（评标第 8 轮观察：重传包会抹掉登记表，兜底态不可见曾致口径误判）。"""
     """索引统计 = **覆盖口径**：这份索引覆盖了什么、每类多少、缺什么。
     `edges=None` 表示索引里没有关系边（旧版索引或还没重建）。"""
     cov = index_store.coverage(entries)
@@ -49,7 +52,15 @@ def stats_text(entries, edges=None):
         out.append("  （空索引）")
 
     out.append("")
+    if registry_missing is None:
+        import paths as _paths
+        registry_missing = not os.path.isfile(
+            os.path.join(_paths.ROOT, "inputs", "available_skills.json"))
     out.append("## 按可见性（平台口径）")
+    if registry_missing:
+        out.append("  ⚠ 当前为全机扫描兜底口径：未检测到登记表（available_skills.json），")
+        out.append("    所有扫到的技能均视为平台可用；如平台有绑定清单，")
+        out.append("    运行 agent-index 建立权威口径（导入后此提示消失）。")
     vis_names = {"ready": "平台可用（默认检索口径）", "off-list": "平台未绑定（仅 --all 全量视图）",
                  "blocked": "平台标记不可用（已排除）"}
     for v, c in sorted(cov.get("by_visibility", {}).items()):

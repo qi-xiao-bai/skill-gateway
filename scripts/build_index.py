@@ -504,9 +504,10 @@ def cmd_search(a):
     for hi, (score, e, overlap) in enumerate(hits):
         pinned_tag = " [★常用置顶]" if e.get("is_pinned") else ""
         cp_tag = "".join(f" [{e[k]}]" for k in ("category", "platform") if e.get(k))
+        un_tag = _unbound_tag(e)
         weak_tag = " （单证据词命中，弱关联）" if (hi == 0 and len(overlap) == 1) else ""
         print(
-            f"{score:6.1f}  ({e['type']}) {e['name']}{pinned_tag}{cp_tag}{weak_tag}: {e['description'][:100]}"
+            f"{score:6.1f}  ({e['type']}) {e['name']}{pinned_tag}{cp_tag}{un_tag}{weak_tag}: {e['description'][:100]}"
         )
         if e.get("triggers"):
             print(f"        触发: {'、'.join(e['triggers'])}")
@@ -918,6 +919,7 @@ def cmd_chat(a):
     related_names = set()
     for rank, (score, e, overlap) in enumerate(hits, 1):
         weak_tag = " ⚠单证据词命中（弱关联，可能是能力缺口）" if (rank == 1 and len(overlap) == 1) else ""
+        un_tag = _unbound_tag(e)
         eid = retrieval.entry_id(e)
         neighbors = retrieval.get_1hop_neighbors(edges, eid, by_id)
         if not neighbors:
@@ -930,7 +932,7 @@ def cmd_chat(a):
         trig = "、".join((e.get("triggers") or [])[:5])
         pinned_tag = " ★ [常用置顶]" if e.get("is_pinned") else ""
         cp_tag = "".join(f" [{e[k]}]" for k in ("category", "platform") if e.get(k))
-        print(f"{rank}. **{e['name']}**{pinned_tag}{cp_tag} [{score:.1f}]{weak_tag} — {desc_short}")
+        print(f"{rank}. **{e['name']}**{pinned_tag}{cp_tag}{un_tag} [{score:.1f}]{weak_tag} — {desc_short}")
         if trig:
             print(f"   触发: {trig}")
         sim = e.get("similar_skills")
@@ -1070,6 +1072,13 @@ def cmd_content_find(a):
     fp = index_store.index_footprint(len(hits))
     if fp:
         print(f"\n{fp}")
+
+
+def _unbound_tag(e):
+    """L1 未绑定标注（评标建议采纳：标注比过滤好）：off-list 候选亮出可安装状态——
+    LLM 照推荐硬加载会撞墙报错甚至误报"平台没这能力"；标注后 agent 把失败转成
+    安装引导。兜底态（无 visibility 字段）无从判定，不标（由 F2 横幅兜底口径声明）。"""
+    return " [未绑定·可安装]" if e.get("visibility") == "off-list" else ""
 
 
 def _skills_meta(pipe):
