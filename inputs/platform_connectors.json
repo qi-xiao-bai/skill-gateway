@@ -1,4 +1,36 @@
 {
   "_说明": "平台侧 MCP/连接器清单（可选）。平台的 MCP/连接器是平台侧服务、不以文件形式落在技能运行环境（索引 MCP=0 的根因），在此手工登记后重跑 build 即可入索引与 dashboard。connectors 数组每项：{name 必填, description 建议中英双语（分词语言敏感）, triggers 可选}；也可用 mcpServers 键登记标准 MCP 服务。保持空数组即表示当前没有需要登记的平台连接器。",
-  "connectors": []
+  "_登记口径": "以下条目为作者数字员工生态中实际对接、已实跑验证的服务（WorkBuddy/沙箱运行时经 scan_mcp 发现或本清单登记入索引）：salesforce 曾作为检索种子实测命中卖方需求确认任务；mining 系列为本地 SSE 数据服务；沙箱侧运行时由平台连接器基础设施承载。",
+  "connectors": [
+    {
+      "name": "salesforce",
+      "description": "Salesforce CRM 数据查询与操作：客户、商机、联系人等业务对象的检索与读写，实测作为检索种子命中卖方需求确认任务 | Salesforce CRM data query & manipulation for accounts, opportunities and contacts",
+      "triggers": ["salesforce", "CRM", "客户", "商机"]
+    },
+    {
+      "name": "web-search-modules",
+      "description": "联网搜索工具集：网页检索与结果抽取，供深度研究、情报类任务调用的搜索模块 | Web search toolkit for research and intelligence tasks",
+      "triggers": ["web-search-modules", "web", "search", "搜索"]
+    },
+    {
+      "name": "mining-news",
+      "description": "矿业行业新闻资讯获取服务（SSE 数据源） | Mining industry news feed service over SSE",
+      "triggers": ["mining-news", "mining", "news", "新闻", "矿业"]
+    },
+    {
+      "name": "mining-pdf",
+      "description": "矿业资料 PDF 文档获取与解析服务（SSE 数据源） | Mining PDF document retrieval and parsing service over SSE",
+      "triggers": ["mining-pdf", "mining", "pdf", "文档", "解析"]
+    },
+    {
+      "name": "mining-price",
+      "description": "矿业/大宗商品行情价格查询服务（SSE 数据源） | Mining and commodity price quotes service over SSE",
+      "triggers": ["mining-price", "mining", "price", "行情", "价格"]
+    },
+    {
+      "name": "codegraph",
+      "description": "代码图谱服务：代码库结构化分析与依赖关系图 | Code graph service for codebase structural and dependency analysis",
+      "triggers": ["codegraph", "代码", "图谱", "code", "graph"]
+    }
+  ]
 }
