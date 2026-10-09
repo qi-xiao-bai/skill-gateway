@@ -173,6 +173,29 @@ class TestPipeline(unittest.TestCase):
         self.assertIn("证据词", pipe["basis"])
         self.assertIn("--graph", pipe["basis"])
 
+    def test_lifecycle_fallback_is_auditable(self):
+        """R6 评标回归锁：语料无生命周期技能时，lifecycle 请求（显式/自动识别）
+        回退图谱是设计内行为，但必须在 notes 与 basis 双留痕——证据词、可建阶段数、
+        回退原因、生效条件缺一不可（静默回退曾连续两轮被评标标为未修复/回归）。"""
+        entries = [
+            {"name": "data-dashboard", "type": "skill",
+             "description": "数据看板 dashboard 图表", "path": "", "triggers": ["看板"]},
+        ]
+        forced = pipeline.build_pipeline("开发一个数据看板技能", entries=entries,
+                                           edges=[], lifecycle=True)
+        self.assertNotEqual(forced["mode"], "lifecycle")
+        joined = " ".join(forced["notes"])
+        self.assertIn("生命周期回退", joined)
+        self.assertIn("/3", joined)  # 阶段计数（真领域种子可占编码实现 → 值随语料，只锁阈值形态）
+        self.assertIn("--lifecycle", joined)
+        self.assertIn("生命周期回退", forced["basis"])
+        bare = pipeline.build_pipeline("开发一个数据看板技能", entries=entries, edges=[])
+        self.assertNotEqual(bare["mode"], "lifecycle")
+        joined2 = " ".join(bare["notes"])
+        self.assertIn("证据词", joined2)
+        self.assertIn("生命周期回退", joined2)
+        self.assertIn("生命周期回退", bare["basis"])
+
     def test_dev_intent_no_false_positive_and_escape(self):
         """防误报：开发票流程（开发+票 但无对象词）不得误切生命周期；
         --graph / lifecycle=False 强制图谱优先于自动识别。"""

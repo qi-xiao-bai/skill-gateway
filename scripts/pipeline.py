@@ -413,6 +413,7 @@ def build_pipeline(query, entries=None, edges=None, seed_top=SEED_TOP, _retried=
     # 按生命周期编排，缺口阶段声明通用能力承接——开发任务不再只命中一个技能
     # 三层判定：显式 --lifecycle > 自动意图识别（lifecycle=None）> --graph 强制图谱
     _auto_ev = []
+    _fb_basis = ""
     if lifecycle is None:
         _is_dev, _auto_ev = _dev_task_signals(query)
     else:
@@ -435,6 +436,15 @@ def build_pipeline(query, entries=None, edges=None, seed_top=SEED_TOP, _retried=
                 "skills": [n for st_ in lc_stages for n in st_["skill_names"]],
                 "notes": lc_notes + twin_notes,
             }
+        # 设计内回退（R6 评标建议落地）：阶段支撑不足时回退图谱，但必须双留痕——
+        # 静默回退曾连续两轮被评标判为"未修复/回归"。notes 给完整解释，basis 给可审计标记
+        _fb = (f"生命周期回退："
+               + (f"检测到开发任务语义（证据词：{'、'.join(_auto_ev)}）" if _auto_ev
+                  else "已声明 --lifecycle")
+               + f"，但当前绑定集仅可建立 {len(lc_stages)}/3 个生命周期阶段，"
+                 "回退图谱模式——绑定生命周期类技能（规划/测试/审查等）后自动生效")
+        twin_notes.append("⚠ " + _fb)
+        _fb_basis = "；" + _fb
 
     if not seeds:
         return {
@@ -510,7 +520,7 @@ def build_pipeline(query, entries=None, edges=None, seed_top=SEED_TOP, _retried=
         mode = "parallel-candidates"
         basis = (
             f"检索种子 {len(seeds)} 个；子图内无 depends_on/时序边 ——"
-            "不硬套流水线模板，输出并行候选供甄别采纳"
+            "不硬套流水线模板，输出并行候选供甄别采纳" + _fb_basis
         )
 
     return {
