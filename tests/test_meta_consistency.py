@@ -101,6 +101,28 @@ class MetaConsistencyTests(unittest.TestCase):
             & (set(paths.LEGACY_OUTPUT_FILES) | set(paths.RUNTIME_INPUT_FILES)),
             set(), "保护清单内的交付资产绝不允许进入任何删除名单")
 
+    def test_6d_skills_meta_visibility_normalized(self):
+        """⑨d pipeline --json 的 skills_meta 元数据归一化（全新评审观察项：仅 1/14 填充）。
+        候选既然进了编排就出自默认可检索集（=ready）——visibility 缺失时默认填充
+        "ready" 是诚实归一；其余字段（category/platform/agent_bound/agents）有则
+        透传、无则不造。构造 seam：_skills_meta(pipe) 纯函数。"""
+        import build_index as bi
+        pipe = {"stages": [
+            {"skills": [
+                {"name": "a-no-meta", "description": "x"},                      # 磁盘扫描条目：无 visibility
+                {"name": "b-has-vis", "visibility": "ready", "agents": ["zcode"]},
+                {"name": "c-off", "visibility": "off-list"},
+            ]},
+        ]}
+        meta = bi._skills_meta(pipe)
+        by = {m["name"]: m for m in meta}
+        self.assertEqual(by["a-no-meta"]["visibility"], "ready")
+        self.assertEqual(by["b-has-vis"]["visibility"], "ready")   # 已有字段原样保留
+        self.assertEqual(by["b-has-vis"]["agents"], ["zcode"])
+        self.assertEqual(by["c-off"]["visibility"], "off-list")
+        self.assertNotIn("agents", by["a-no-meta"])                 # 无中生有禁止
+        self.assertNotIn("agent_bound", by["a-no-meta"])
+
     def test_6c_cli_lifecycle_default_is_none(self):
         """⑨c CLI 层三态回归（第 5 轮评标实证的 bug）：--lifecycle/--graph 共用 dest，
         --lifecycle 的 store_true 默认 False 先占位 → 裸跑被当成"强制图谱"，

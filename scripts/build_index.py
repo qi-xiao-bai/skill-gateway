@@ -1072,6 +1072,21 @@ def cmd_content_find(a):
         print(f"\n{fp}")
 
 
+def _skills_meta(pipe):
+    """pipeline --json 的候选元数据：visibility 缺失时默认 "ready"（候选既然进了
+    编排就出自默认可检索集——评标语料经磁盘扫描路径的条目常缺此字段，曾出现 1/14
+    填充）；其余字段有则透传、无则不造。"""
+    meta = []
+    for st in pipe.get("stages", []):
+        for sk in st.get("skills", []):
+            m = {"name": sk.get("name", ""), "visibility": sk.get("visibility") or "ready"}
+            for k in ("category", "platform", "agent_bound", "agents"):
+                if sk.get(k):
+                    m[k] = sk[k]
+            meta.append(m)
+    return meta
+
+
 def cmd_pipeline(a):
     """技能图谱串联编排：按任务检索 + 依图谱拓扑自动生成多技能协同流水线（无硬编码模板）。"""
     pipe = pipeline_mod.build_pipeline(a.query, include_off_list=getattr(a, "all_items", False),
@@ -1094,11 +1109,7 @@ def cmd_pipeline(a):
                 for s in pipe["stages"]
             ],
             "skills": sorted(pipe.get("skills", [])),
-            "skills_meta": [
-                {"name": sk["name"],
-                 **{k: sk[k] for k in ("category", "platform", "visibility", "agent_bound", "agents") if sk.get(k)}}
-                for s in pipe["stages"] for sk in s["skills"]
-            ],
+            "skills_meta": _skills_meta(pipe),
         }
         print(json.dumps(clean_pipe, ensure_ascii=False, indent=2))
     else:
