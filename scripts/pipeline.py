@@ -107,7 +107,7 @@ def _seq_stage(i, members, upstream_names, evidence, is_last, cycle_ids):
 
 
 def _parallel_stage(i, members, evidence):
-    """并行候选阶段：图谱中无依赖关系时的诚实输出——列候选、给证据、不伪造顺序。"""
+    """并行候选阶段：图谱中无依赖关系时的诚实输出——列候选、给证据。"""
     names = [m["name"] for m in members]
     return {
         "index": i,
@@ -505,7 +505,7 @@ def build_pipeline(query, entries=None, edges=None, seed_top=SEED_TOP, _retried=
             if members:
                 stages.append(_parallel_stage(len(stages) + 1, members, evidence))
                 notes.append(
-                    "部分种子之间无依赖边，已列为并行候选阶段（不伪造时序）。"
+                    "部分种子之间无依赖边，已列为并行候选阶段。"
                 )
         mode = "topological"
         basis = (
@@ -560,7 +560,7 @@ def format_pipeline_markdown(pipe):
                      "阶段数量与顺序由图谱边决定，不是预设模板。")
     else:
         lines.append("> **编排依据**：图谱中未检出依赖关系 —— 以下为**并行候选**，"
-                     "不伪造流水线时序；采纳哪个/哪几个由执行 Agent 甄别。")
+                     "采纳哪个/哪几个由执行 Agent 甄别。")
     lines.append(f"> **信号统计**：{pipe['basis']}\n")
 
     directives = get_user_directives()
