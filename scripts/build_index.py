@@ -1654,6 +1654,7 @@ COMMANDS = [
             (("--agent",), {"action": "store_true", "dest": "agent_only",
                              "help": "Agent 绑定口径：编排种子只取当前 Agent 绑定的技能（非默认，默认平台口径）"}),
             (("--lifecycle",), {"action": "store_true", "dest": "force_lifecycle",
+                                  "default": None,
                                   "help": "强制按开发生命周期契约编排（未声明时 CLI 做证据式意图识别自动进入，动词+对象双信号）"}),
             (("--graph",), {"action": "store_false", "dest": "force_lifecycle",
                            "help": "强制图谱模式（跳过意图识别自动生命周期，误判逃生门）"}),

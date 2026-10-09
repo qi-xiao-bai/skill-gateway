@@ -101,6 +101,21 @@ class MetaConsistencyTests(unittest.TestCase):
             & (set(paths.LEGACY_OUTPUT_FILES) | set(paths.RUNTIME_INPUT_FILES)),
             set(), "保护清单内的交付资产绝不允许进入任何删除名单")
 
+    def test_6c_cli_lifecycle_default_is_none(self):
+        """⑨c CLI 层三态回归（第 5 轮评标实证的 bug）：--lifecycle/--graph 共用 dest，
+        --lifecycle 的 store_true 默认 False 先占位 → 裸跑被当成"强制图谱"，
+        意图识别在 CLI 路径上成死代码。裸跑必须是 None（自动识别），
+        --lifecycle=True、--graph=False 各归各位。函数层单测测不到这里——
+        本测试锁 argparse 层。"""
+        import build_index as bi
+        p = bi._build_parser()
+        bare = p.parse_args(["pipeline", "某任务"])
+        self.assertIsNone(bare.force_lifecycle, "裸跑默认必须是 None（自动识别），不得被 False 顶位")
+        on = p.parse_args(["pipeline", "--lifecycle", "某任务"])
+        self.assertTrue(on.force_lifecycle)
+        off = p.parse_args(["pipeline", "--graph", "某任务"])
+        self.assertFalse(off.force_lifecycle)
+
     def test_6b_pack_carries_evidence_dirs(self):
         """⑥b 参赛包必须携带评标证据目录：tests/（测试跑通证据）与 docs/
         （演进 PRD）不得离开 pack 白名单/进入排除名单，conftest.py 同理

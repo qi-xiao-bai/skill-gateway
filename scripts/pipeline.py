@@ -144,9 +144,10 @@ def _pure_vocab(name):
 
 # 开发任务意图信号（动词+对象双命中才算开发语义——单信号防不住"开发票"这类假阳性：
 # 开发票 含"开发"但不含对象词，不会误切；证据词随编排输出，可审计、可用 --graph 逃生）
-_DEV_ACTION_TERMS = ("开发", "实现", "编写", "写一个", "做一个", "修复", "新增",
-                     "重构", "部署", "上线", "加一个", "添加", "build", "implement",
-                     "develop", "fix", "refactor", "deploy")
+_DEV_ACTION_TERMS = ("开发", "实现", "编写", "写一个", "做一个", "写个", "搞一个",
+                     "创建", "制作", "修复", "新增", "重构", "部署", "上线",
+                     "加一个", "添加", "build", "implement", "develop", "fix",
+                     "refactor", "deploy")
 _DEV_OBJECT_TERMS = ("技能", "功能", "命令", "页面", "接口", "服务", "工具",
                      "脚本", "模块", "应用", "系统", "报表", "skill", "feature",
                      "command", "tool", "module", "app")
