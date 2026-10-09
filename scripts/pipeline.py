@@ -118,7 +118,7 @@ def _parallel_stage(i, members, evidence):
         "input": "用户任务原文与各候选的检索证据（见入选依据）",
         "output": "；".join(f"{m['name']}：{_desc_of(m)}" for m in members),
         "handoff": "候选相互独立、无先后约束：由执行 Agent 按任务甄别采纳（采纳即 detail 加载全文），"
-                   "不采纳的不加载；本阶段不是流水线，不伪造时序",
+                   "不采纳的不加载",
         "evidence": {m["name"]: evidence.get(m["name"].lower(), []) for m in members},
     }
 
@@ -648,7 +648,7 @@ def format_pipeline_markdown(pipe):
     else:
         lines.append("## 5. 留痕脚注（本模式不预生成——按实际调用链生成）")
         lines.append("")
-        lines.append("生命周期编排的提名单不进脚注。执行 Agent 在答复末尾按**真实调用**输出：")
+        lines.append("编排提名单不进脚注。执行 Agent 在答复末尾按**真实调用**输出：")
         lines.append("```text")
         lines.append("[skill-gateway] 调用链: [实际加载的技能A] → [实际加载的技能B]")
         lines.append("```")
@@ -662,16 +662,11 @@ def footnote_text(pipe):
     if pipe["mode"] == "empty":
         return "[skill-gateway] 技能串联编排: 无候选命中 | 未生成流水线 | 建议换词或 list 浏览"
     if pipe["mode"] == "parallel-candidates":
-        chain = " / ".join(f"[{n}]" for n in pipe["skills"])
-        return (
-            f"[skill-gateway] 并行候选编排: {chain} | 图谱无依赖边，不伪造流水线 | "
-            "由执行 Agent 甄别采纳"
-        )
+        # 提名单不进脚注（红线 7）：候选链属工作单内容，实际调用链由执行 Agent 生成
+        return ""
     if pipe["mode"] == "lifecycle":
         # 不预生成：CLI 在编排时刻不可能知道执行 Agent 最终调用谁——
         # 脚注=实际调用链，由执行 Agent 按真实 detail 加载生成（工作单第 5 节有指示）
         return ""
-    chain = " → ".join(f"[{'、'.join(st['skill_names'])}]" for st in pipe["stages"])
-    return (
-        f"[skill-gateway] 技能串联编排: {chain} | 图谱拓扑 {len(pipe['stages'])} 阶段"
-    )
+    # 提名单不进脚注（红线 7）：阶段技能链属工作单内容，实际调用链由执行 Agent 生成
+    return ""

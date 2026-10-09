@@ -211,6 +211,15 @@ def record_interaction(cmd, context=None, state=None, cfg=None):
                             state.setdefault("promoted_skills", []).append(
                                 {"skill": s, "count": count, "time": time.time()}
                             )
+                            # 自动晋升是画像变更：与手动画像变更同链路——同步活跃记忆
+                            # + 写纠偏审计（此前绕过两者：memory.md 停在旧态、进化无审计）
+                            try:
+                                sync_memory_markdown(prof)
+                                log_correction(
+                                    f"自动进化：{s} 高频使用 {count} 次晋升置顶",
+                                    f"pinned_skills += {s}（阈值 {threshold}）")
+                            except Exception:
+                                pass
                         except Exception:
                             pass
 

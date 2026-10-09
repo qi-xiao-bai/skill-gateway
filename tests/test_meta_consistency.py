@@ -151,6 +151,43 @@ class MetaConsistencyTests(unittest.TestCase):
         self.assertNotIn("conftest.py", bi.PACK_EXCLUDE_FILES)
         self.assertIn("output", bi.PACK_EXCLUDE_DIRS)  # 运行产物照旧排除
 
+    def test_6e_auto_promotion_syncs_memory_and_logs_correction(self):
+        """⑨e 自动晋升断线修复：高频晋升置顶是画像变更——必须与手动画像变更同链路，
+        同步 output/memory.md + 写 corrections.md 纠偏审计（此前只改 profile 绕过两者，
+        memory.md 停在旧态、进化事件无审计）。测试经 SKILL_GATEWAY_OUT_DIR 隔离产物目录。"""
+        import os as _os
+        import tempfile as _tf
+        import proactive as _pro
+        import paths as _paths
+        import json as _json
+        _tmp = _tf.mkdtemp(prefix="skix-promo-")
+        _os.environ["SKILL_GATEWAY_OUT_DIR"] = _tmp
+        # PROFILE_FILE 不受 OUT_DIR 管（真实画像在技能根）——测试必须备份还原，
+        # 否则晋升写盘会污染真机画像（首轮就实抓了这个坑）
+        prof_path = _paths.PROFILE_FILE
+        _backup = open(prof_path, encoding="utf-8").read() if _os.path.isfile(prof_path) else None
+        try:
+            _paths._PROFILE_CACHE["key"] = None
+            _pro.index_store.atomic_write(
+                prof_path, _json.dumps({"pinned_skills": []}, ensure_ascii=False))
+            state = {"skill_frequency": {"hot-skill": 2}}
+            cfg = {"auto_promote_frequent_skills": True, "frequent_threshold": 2}
+            promoted = _pro.record_interaction("detail",
+                                                context={"skills": ["hot-skill"]},
+                                                state=state, cfg=cfg)
+            self.assertEqual(promoted, ["hot-skill"])
+            mem = _os.path.join(_tmp, "memory.md")
+            corr = _os.path.join(_tmp, "corrections.md")
+            self.assertTrue(_os.path.isfile(mem), "晋升后 memory.md 必须同步")
+            self.assertIn("hot-skill", open(mem, encoding="utf-8").read())
+            self.assertTrue(_os.path.isfile(corr), "晋升是画像变更，必须记纠偏审计")
+            self.assertIn("自动进化", open(corr, encoding="utf-8").read())
+        finally:
+            _os.environ.pop("SKILL_GATEWAY_OUT_DIR", None)
+            _paths._PROFILE_CACHE["key"] = None
+            if _backup is not None:
+                _pro.index_store.atomic_write(prof_path, _backup)
+
     def test_7_all_temp_creations_use_skix_prefix(self):
         """⑦ 不放过一个测试遗留：所有临时目录/文件创建点必须用 skix- 前缀
         （clean 的系统临时区清扫按该前缀匹配，无前缀 = 扫不到的暗垃圾）。"""

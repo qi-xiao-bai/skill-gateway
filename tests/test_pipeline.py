@@ -143,13 +143,15 @@ class TestPipeline(unittest.TestCase):
         self.assertIn("```mermaid", md)
         self.assertIn("flowchart LR", md)
         self.assertIn("阶段协同与上下文传递矩阵", md)
-        self.assertIn("[skill-gateway] 技能串联编排:", md)
+        self.assertNotIn("[skill-gateway] 技能串联编排:", md)  # 提名单不进脚注（红线 7）
+        self.assertIn("调用链", md)  # 第 5 节给出实际调用链生成指示
 
     def test_footnote_text_modes(self):
         entries = [{"name": "solo-skill", "type": "skill", "description": "独立技能无依赖", "triggers": ["独立"]}]
         foot_par = pipeline.footnote_text(
             pipeline.build_pipeline("独立技能", entries=entries, edges=[]))
-        self.assertIn("并行候选", foot_par)
+        if foot_par != "":
+            self.assertEqual(foot_par, "", "编排提名单不进脚注：并行候选模式同样不预生成")
         foot_empty = pipeline.footnote_text(
             pipeline.build_pipeline("不存在xyzzy", entries=[], edges=[], _retried=True))
         self.assertIn("未生成流水线", foot_empty)
@@ -210,6 +212,28 @@ class TestPipeline(unittest.TestCase):
         forced = pipeline.build_pipeline("开发一个报表功能", entries=entries, edges=[],
                                           lifecycle=False)
         self.assertNotEqual(forced["mode"], "lifecycle")
+
+    def test_orchestration_footnotes_not_prebaked(self):
+        """红线 7 贯彻：编排提名单不进脚注（此前只贯彻了 lifecycle，graph/parallel
+        仍预生成候选链——给执行 agent 往脚注里贴"语义否决"批注留了载体，用户实抓）。
+        全部编排模式一律空串，实际调用链由执行 Agent 按真实加载生成。"""
+        entries = [
+            {"name": "plan", "type": "skill", "description": "planning 规划",
+             "path": "", "triggers": []},
+            {"name": "tdd", "type": "skill", "description": "测试 tdd test",
+             "path": "", "triggers": []},
+        ]
+        pipe_par = pipeline.build_pipeline("独立规划 规划 test", entries=entries, edges=[])
+        if pipe_par["mode"] == "parallel-candidates":
+            self.assertEqual(pipeline.footnote_text(pipe_par), "")
+        pipe_top = pipeline.build_pipeline("开发实现 planning 规划 test 测试",
+                                            entries=entries, edges=[], lifecycle=True)
+        if pipe_top["mode"] == "lifecycle":
+            self.assertEqual(pipeline.footnote_text(pipe_top), "")
+        # 手把手说教清理：并行候选阶段 handoff 不再说"不伪造时序"
+        handoffs = " ".join(st.get("handoff", "") for st in pipe_top["stages"]) + " ".join(
+            st.get("handoff", "") for st in pipe_par["stages"])
+        self.assertNotIn("不伪造", handoffs)
 
     def test_lifecycle_footnote_not_prebaked(self):
         """生命周期脚注不预生成（用户规则：脚注=实际调用链，没调用就不写）——
