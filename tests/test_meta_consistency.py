@@ -123,6 +123,38 @@ class MetaConsistencyTests(unittest.TestCase):
         self.assertNotIn("agents", by["a-no-meta"])                 # 无中生有禁止
         self.assertNotIn("agent_bound", by["a-no-meta"])
 
+    def test_6f_migrate_never_moves_pack_zip(self):
+        """⑨f migrate_legacy_outputs 不得搬 pack 交付物（2026-10-10 实抓：pack 在
+        根目录生成 zip，下一条命令触发 migrate 把它无感平移进 output/，参赛包
+        "消失"）。其他历史产物照常平移。"""
+        import os as _os
+        import tempfile as _tf
+        import paths as _paths
+        tmp = _tf.mkdtemp(prefix="skix-mig-")
+        out_d = _os.path.join(tmp, "output")
+        legacy = _os.path.join(tmp, "memory.md")
+        zip_p = _os.path.join(tmp, "skill-gateway.zip")
+        open(legacy, "w", encoding="utf-8").write("legacy artifact")
+        open(zip_p, "w", encoding="utf-8").write("pack deliverable")
+        _orig_root, _orig_outdir_env = _paths.ROOT, _os.environ.get("SKILL_GATEWAY_OUT_DIR")
+        _paths._MIGRATED = False
+        try:
+            _paths.ROOT = tmp
+            _os.environ["SKILL_GATEWAY_OUT_DIR"] = out_d
+            _paths.migrate_legacy_outputs()
+            self.assertTrue(_os.path.isfile(zip_p), "pack 交付 zip 必须留在根目录")
+            self.assertFalse(_os.path.isfile(_os.path.join(out_d, "skill-gateway.zip")),
+                             "migrate 不得把 zip 搬进 output/")
+            self.assertTrue(_os.path.isfile(_os.path.join(out_d, "memory.md")),
+                            "真历史产物照常平移")
+        finally:
+            _paths.ROOT = _orig_root
+            _paths._MIGRATED = False
+            if _orig_outdir_env is None:
+                _os.environ.pop("SKILL_GATEWAY_OUT_DIR", None)
+            else:
+                _os.environ["SKILL_GATEWAY_OUT_DIR"] = _orig_outdir_env
+
     def test_6c_cli_lifecycle_default_is_none(self):
         """⑨c CLI 层三态回归（第 5 轮评标实证的 bug）：--lifecycle/--graph 共用 dest，
         --lifecycle 的 store_true 默认 False 先占位 → 裸跑被当成"强制图谱"，

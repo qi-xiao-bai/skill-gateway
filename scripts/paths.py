@@ -571,7 +571,10 @@ def out_dir():
 
 
 def migrate_legacy_outputs():
-    """若根目录下存在历史产物文件，自动且无感地平移到 output/ 目录中，保持项目根目录整洁。"""
+    """若根目录下存在历史产物文件，自动且无感地平移到 output/ 目录中，保持项目根目录整洁。
+    例外：skill-gateway.zip 是 pack 的交付物、官方地址就是技能根目录——
+    migrate 不得动它（2026-10-10 实抓：pack 刚生成 zip，下一条命令把它无感搬进
+    output/，用户找不到参赛包；clean 名单仍可正常回收它）。"""
     global _MIGRATED
     if _MIGRATED:
         return
@@ -582,6 +585,8 @@ def migrate_legacy_outputs():
     try:
         os.makedirs(d, exist_ok=True)
         for fname in LEGACY_OUTPUT_FILES:
+            if fname == "skill-gateway.zip":
+                continue  # pack 交付物，根目录就是它的家
             old_p = os.path.join(ROOT, fname)
             new_p = os.path.join(d, fname)
             if os.path.isfile(old_p):
