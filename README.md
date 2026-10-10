@@ -2,9 +2,7 @@
 
 > **版本**：v4（自建实现，独立开发）
 >
-> **演进关系声明**：本作品由作者此前作品 skill-indexer（索引器）演进而来——索引底座为继承，**调度契约、生命周期编排、图谱治理、命中率账本、平台/Agent 双口径、dashboard 图谱面板为本作品新增贡献**（演进记录见 `docs/PRD-skill-indexer-enhancement.md`），按"同一作者不同作品独立评分"原则参评。
->
-> **测试留痕**：全量测试 123 项全过（pytest，含元一致性守卫、翻译链回归、生命周期编排等），原始输出见 `references/TEST-EVIDENCE.md`。
+> **测试留痕**：全量测试 138 项全过（pytest 或标准库 `python -m unittest discover -s tests` 均可复跑——评标环境无需装 pytest），原始输出见 `references/TEST-EVIDENCE.md`。
 
 一个**技能资产中枢型元技能（meta-skill）**：把数字员工与 Agent 平台上"上百个孤立技能"变成**可编排、可看见、可治理**的基础设施。
 
