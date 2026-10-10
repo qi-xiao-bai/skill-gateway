@@ -524,6 +524,15 @@ LEGACY_OUTPUT_FILES = [
 # clean 的目录级清扫名单（编译缓存 + 会话工具残留）；源码目录绝不在此列
 CLEAN_DIR_SWEEP = ("__pycache__", ".pytest_cache", ".zcode", ".omx")
 
+# 交付资产保护清单（2026-10-08 评标交付轮确立）：随包分发、手工维护或不易再生的
+# 源数据资产——clean 的任何删除动作（含未来名单扩张/目录清扫）都必须跳过并告警。
+# test_meta_consistency.test_6 断言本清单与删除名单零交集。
+CLEAN_PROTECTED_FILES = [
+    "inputs/platform_connectors.json",  # 平台连接器登记表（手工维护；沙箱 MCP=0 的唯一入索通道）
+    "templates/d3.v7.min.js",           # D3 运行库（dashboard 离线单文件依赖，无外网时不可再生）
+    "references/TEST-EVIDENCE.md",      # 测试运行留痕（评标"测试跑通"审计证据，不可再生）
+]
+
 # 环境本地登记表（inputs/ 下的运行时状态，随环境各自演化）——clean 时从源/副本
 # 根目录的 inputs/ 清除（源目录不该持有登记表；各环境用 agent-index 自行重建）。
 # 模板与示例（available_skills.example.json / platform_connectors.json）不在名单，永不清理。
