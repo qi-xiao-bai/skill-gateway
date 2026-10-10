@@ -148,6 +148,88 @@ class AvailableListTests(unittest.TestCase):
         by = {e["name"]: e for e in merged}
         self.assertTrue(os.path.isfile(by["skill-gateway"]["path"]))
 
+    def test_load_index_bootstrap_agent_level(self):
+        """load_index 兑底升级：索引缺失时【身份已声明 + 技能根在记忆】→ 自动走
+        agent-index 自助路径建权威口径（扫声明根→建登记表→三段合并索引）；
+        缺任一 → 现行扫描级兑底且登记表不落盘。永不父目录兜底（10-08 的 148
+        污染事故边界）。"""
+        import os as _os
+        import tempfile as _tf
+        import paths as _paths
+        import index_store
+        from unittest import mock
+
+        # 测试沙箱：临时技能根里放一个真技能
+        root = _tf.mkdtemp(prefix="skix-boot-")
+        sk = _os.path.join(root, "demo-skill")
+        _os.makedirs(sk)
+        with open(_os.path.join(sk, "SKILL.md"), "w", encoding="utf-8") as f:
+            f.write("---" + chr(10) + "name: demo-skill" + chr(10)
+                    + "description: bootstrap demo skill 演示" + chr(10)
+                    + "---" + chr(10) + "# demo" + chr(10))
+
+        # 自举写登记表走 paths.ROOT，读登记表走 scanner.ROOT——生产两者同根，
+        # 测试须临时对齐（setUpClass 已把 scanner.ROOT 指去临时目录）
+        _real_root = scanner.ROOT
+        scanner.ROOT = _paths.ROOT
+        reg_path = _os.path.join(_paths.ROOT, "inputs", "available_skills.json")
+        _bak = open(reg_path, encoding="utf-8").read() if _os.path.isfile(reg_path) else None
+        _bak_roots = open(_os.path.join(_paths.ROOT, "inputs", "env_skill_roots.json"),
+                          encoding="utf-8").read() if _os.path.isfile(
+            _os.path.join(_paths.ROOT, "inputs", "env_skill_roots.json")) else None
+        out_tmp = _tf.mkdtemp(prefix="skix-bootout-")
+        _os.environ["SKILL_GATEWAY_OUT_DIR"] = out_tmp
+        _os.environ["SKILL_GATEWAY_AGENT"] = "boot-agent"
+        try:
+            # 场景 A：双在 → Agent 级：登记表落盘且含 current_agent/绑定，索引为权威口径
+            with mock.patch.object(_paths, "_load_env_roots_memory",
+                                   return_value={"boot-agent": [root]}):
+                es = index_store.load_index()
+            self.assertTrue(_os.path.isfile(reg_path), "双守门在位时必须建立登记表")
+            import json as _json
+            reg = _json.load(open(reg_path, encoding="utf-8"))
+            self.assertEqual(reg.get("current_agent"), "boot-agent")
+            names = [x["name"] for x in reg.get("skills", [])]
+            self.assertIn("demo-skill", names)
+            ready = [e for e in es if e.get("name") == "demo-skill" and e.get("visibility") == "ready"]
+            self.assertTrue(ready, "声明根内技能应为平台可用（ready）")
+        finally:
+            _os.environ.pop("SKILL_GATEWAY_AGENT", None)
+            _os.environ.pop("SKILL_GATEWAY_OUT_DIR", None)
+            scanner.ROOT = _real_root
+            # 还原真实登记表与根记忆（自举测试绝不能污染真机状态）
+            if _bak is None:
+                _os.path.isfile(reg_path) and _os.remove(reg_path)
+            else:
+                import index_store as _is2
+                _is2.atomic_write(reg_path, _bak)
+            rp = _os.path.join(_paths.ROOT, "inputs", "env_skill_roots.json")
+            if _bak_roots is None:
+                _os.path.isfile(rp) and _os.remove(rp)
+            else:
+                import index_store as _is3
+                _is3.atomic_write(rp, _bak_roots)
+
+        # 场景 B：身份在但记忆根缺 → 登记表绝不落盘（永不父目录兜底）
+        reg_path2 = reg_path
+        before = _os.path.isfile(reg_path2)
+        _os.environ["SKILL_GATEWAY_AGENT"] = "boot-agent"
+        out2 = _tf.mkdtemp(prefix="skix-bootout2-")
+        _os.environ["SKILL_GATEWAY_OUT_DIR"] = out2
+        try:
+            with mock.patch.object(_paths, "_load_env_roots_memory", return_value={}):
+                index_store.load_index()
+            self.assertEqual(_os.path.isfile(reg_path2), before,
+                             "记忆根缺位时登记表必须保持原状（不建不删）")
+        finally:
+            _os.environ.pop("SKILL_GATEWAY_AGENT", None)
+            _os.environ.pop("SKILL_GATEWAY_OUT_DIR", None)
+            if _bak is not None:
+                import index_store as _is4
+                _is4.atomic_write(reg_path2, _bak)
+            elif _os.path.isfile(reg_path2):
+                _os.remove(reg_path2)
+
     def test_self_heal_verifies_target_exists(self):
         """P0 根治（评标第 8 轮实抓）：自愈目标必须存在性验证——平台执行形态下
         从脚本位置推导的包根可能落空（脚本从会话/临时目录运行），"修复"写出

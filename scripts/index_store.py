@@ -434,6 +434,29 @@ def index_footprint(hit_count=None):
     return "[skill-gateway] " + " | ".join(parts) if parts else ""
 
 
+def _bootstrap_or_fallback():
+    """索引缺失时的兜底（2026-10-10 升级）：身份已声明（SKILL_GATEWAY_AGENT）且
+    该身份的技能根在记忆（env_skill_roots.json）→ 自动走 agent-index 自助路径建
+    Agent 级权威口径（扫声明根→登记表→三段合并）；缺任一 → 现行扫描级兜底。
+    双守门之外绝不落刀：无记忆根不猜父目录（10-08 的 148 污染事故边界）。"""
+    agent_name = (os.environ.get("SKILL_GATEWAY_AGENT") or "").strip()
+    if agent_name:
+        try:
+            roots = paths._load_env_roots_memory().get(agent_name) or []
+        except Exception:
+            roots = []
+        if roots:
+            try:
+                import build_index as _bi
+                es = _bi.agent_index_bootstrap(agent_name, roots)
+                if es:
+                    return es
+            except Exception as _ex:
+                print(f"[skill-gateway] 失败(已忽略): Agent 级自举失败({_ex})，回退扫描级",
+                      file=sys.stderr)
+    return build_index()
+
+
 def load_index():
     """读索引；**索引不存在就自动建一次** —— 任何读命令（list / search / stats …）
     因此都**不需要先手动敲 index**。
@@ -441,7 +464,7 @@ def load_index():
     否则会出现"上次建了个只有自己的索引，之后平台清单来了也永远不再自愈"的死角。"""
     es = read_index()
     if es is None:
-        es = build_index()
+        es = _bootstrap_or_fallback()
     es, healed = heal_if_self_only(es)
     if healed and healed.get("partial"):
         print(

@@ -72,6 +72,37 @@ def cmd_index(a):
         print(scanner_mod.probe_report())
 
 
+def agent_index_bootstrap(agent_name, env_dirs):
+    """load_index 兜底升级入口（由 index_store 延迟导入调用；身份与记忆根已由调用方
+    双守门验证）。沿【声明根】自助建立权威登记表，随后 build_index() 自动检测登记表
+    并走三段合并（清单 ready/blocked + 磁盘 off-list）。根只来自调用方从记忆取出
+    的声明值，本函数绝不父目录兜底。返回条目列表；扫描为空或异常返回 None，
+    由调用方回退现行扫描级。"""
+    prev_dirs = os.environ.get("SKILL_GATEWAY_SKILL_DIRS")
+    prev_only = os.environ.get("SKILL_GATEWAY_ONLY_DIRS")
+    os.environ["SKILL_GATEWAY_SKILL_DIRS"] = os.pathsep.join(env_dirs)
+    os.environ["SKILL_GATEWAY_ONLY_DIRS"] = "1"
+    try:
+        raw = scanner_mod.scan_skills(ignore_list=True)
+    finally:
+        if prev_dirs is None:
+            os.environ.pop("SKILL_GATEWAY_SKILL_DIRS", None)
+        else:
+            os.environ["SKILL_GATEWAY_SKILL_DIRS"] = prev_dirs
+        if prev_only is None:
+            os.environ.pop("SKILL_GATEWAY_ONLY_DIRS", None)
+        else:
+            os.environ["SKILL_GATEWAY_ONLY_DIRS"] = prev_only
+    if not raw:
+        return None
+    doc = importer_mod.to_available_list(raw, agent_name, scanner_mod.available_list_doc())
+    list_path = os.path.join(paths.ROOT, "inputs", "available_skills.json")
+    index_store.atomic_write(list_path, json.dumps(doc, ensure_ascii=False, indent=2))
+    print(f"[load_index 自举] 身份声明（{agent_name}）与技能根记忆在位 → "
+          f"自动建立 Agent 级权威登记表（{len(raw)} 项）并按其口径建索引")
+    return index_store.build_index()
+
+
 def cmd_agent_index(a):
     """建立 Agent 级索引：把清单合并进权威可用清单（inputs/available_skills.json）
     并立即重建索引、dashboard 与内容索引。
