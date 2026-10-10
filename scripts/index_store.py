@@ -317,6 +317,15 @@ def build_index(broad="auto"):
         entries, _st = _update_from_available_list(read_index(), avail)
         return entries
     entries = scanner.scan_all(broad)
+    # 无登记表不臆造口径（评标第 8 轮实证：平台挂载可能是全局共享库，扫到即
+    # ready 会把别人 workspaces 的技能标成"平台可用"——跨污染推荐）。权威 ready
+    # 只能来自登记表/自举；无登记表时磁盘条目全部 off-list（仅 --all 审计可见）。
+    for e in entries:
+        if e.get("type") == "skill" and not e.get("excluded"):
+            e["visibility"] = "off-list"
+            e["excluded"] = True
+            e["exclude_reason"] = ("无登记表：未建立权威口径前不做可用推定（防共享库跨污染）"
+                                   "——运行 agent-index 建立权威口径")
     write_index(entries)
     return entries
 

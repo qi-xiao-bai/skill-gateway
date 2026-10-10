@@ -123,6 +123,55 @@ class MetaConsistencyTests(unittest.TestCase):
         self.assertNotIn("agents", by["a-no-meta"])                 # 无中生有禁止
         self.assertNotIn("agent_bound", by["a-no-meta"])
 
+    def test_6h_connectors_template_ships_empty(self):
+        """⑨h 参赛包的连接器登记表必须以空模板分发（2026-10-10 平台审计实抓：
+        包内携带作者本机的 6 项历史快照连接器——在平台全是幽灵条目，占默认检索
+        口径误导排障）。环境真实连接器由各环境自己登记，源码包零携带。"""
+        import json as _json
+        import paths as _paths
+        tpl = _json.load(open(os.path.join(_paths.ROOT, "inputs",
+                                           "platform_connectors.json"), encoding="utf-8"))
+        self.assertEqual(tpl.get("connectors"), [],
+                         "源模板 connectors 必须为空数组——本机快照绝不进参赛包")
+
+    def test_6g_no_registry_never_fabricates_ready(self):
+        """⑨g 无登记表不臆造口径（评标第 8 轮实证：平台挂载是全局共享库，
+        扫到即 ready 会把别人 workspaces 的技能标成"平台可用"——跨污染推荐）。
+        无登记表时磁盘扫描全部标 off-list（仅 --all 审计可见），ready 集为空。"""
+        import os as _os
+        import tempfile as _tf
+        import scanner as _scanner
+        import index_store as _is
+
+        tmp = _tf.mkdtemp(prefix="skix-noreg-")
+        sk = _os.path.join(tmp, "stranger-skill")
+        _os.makedirs(sk)
+        open(_os.path.join(sk, "SKILL.md"), "w", encoding="utf-8").write(
+            "---" + chr(10) + "name: stranger-skill" + chr(10)
+            + "description: 别人的共享库技能 stranger" + chr(10) + "---" + chr(10))
+        out_d = _tf.mkdtemp(prefix="skix-noregout-")
+        _os.environ["SKILL_GATEWAY_OUT_DIR"] = out_d
+        _os.environ["SKILL_GATEWAY_SKILL_DIRS"] = tmp  # 圈定扫描根
+        _os.environ["SKILL_GATEWAY_ONLY_DIRS"] = "1"
+        _orig_root = _scanner.ROOT
+        _scanner.ROOT = tmp  # 该根下无 inputs/available_skills.json
+        try:
+            es = _is.build_index()
+            hits = [e for e in es if e.get("name") == "stranger-skill"]
+            self.assertTrue(hits, "扫描应发现该技能（审计可见）")
+            e = hits[0]
+            self.assertEqual(e.get("visibility"), "off-list",
+                             "无登记表时磁盘条目必须 off-list，不得臆造 ready")
+            self.assertTrue(e.get("excluded"), "默认检索口径不得包含它")
+            self.assertIn("登记表", e.get("exclude_reason", ""))
+            ready = [x for x in es if x.get("visibility") == "ready"]
+            self.assertEqual(ready, [], "无登记表时 ready 集必须为空")
+        finally:
+            _scanner.ROOT = _orig_root
+            _os.environ.pop("SKILL_GATEWAY_OUT_DIR", None)
+            _os.environ.pop("SKILL_GATEWAY_SKILL_DIRS", None)
+            _os.environ.pop("SKILL_GATEWAY_ONLY_DIRS", None)
+
     def test_6f_migrate_never_moves_pack_zip(self):
         """⑨f migrate_legacy_outputs 不得搬 pack 交付物（2026-10-10 实抓：pack 在
         根目录生成 zip，下一条命令触发 migrate 把它无感平移进 output/，参赛包
