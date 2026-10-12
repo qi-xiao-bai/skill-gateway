@@ -111,6 +111,31 @@ def _fallback_desc(body):
     return paras[0][:300] if paras else None
 
 
+def _first_h1(body, max_len=40):
+    """正文第一个 H1（`# ` 单井号）纯文本；`##` 及更深不算。无则空串。"""
+    for line in body.split("\n"):
+        s = line.strip()
+        if not s or s.startswith("```"):
+            continue
+        if s.startswith("# "):
+            t = re.sub(r"[#*_`]+", " ", s[2:])
+            return re.sub(r"\s+", " ", t).strip()[:max_len]
+        if s.startswith("#"):
+            continue
+        break
+    return ""
+
+
+def extract_h1_title(path, max_len=40):
+    """读 SKILL.md 正文 H1 标题（自动跳过 frontmatter）。
+    很多技能的中文名只写在正文 H1（frontmatter 全英文，如 business-flow-simulator
+    的「对症下药」）——不收进触发词，中文 query 在元数据层永远打不中。"""
+    text = _read_text(path)
+    if not text:
+        return ""
+    return _first_h1(body_text(text), max_len)
+
+
 def parse_skill_md(path):
     """从 SKILL.md 抽取 name/description（frontmatter 优先，否则 # 标题+首段）。"""
     text = _read_text(path)
@@ -152,6 +177,9 @@ def parse_skill_meta(path):
         d = _fallback_desc(body)
         if d:
             meta["description"] = d
+    _h1v = _first_h1(body)
+    if _h1v:
+        meta["h1"] = _h1v
     return meta
 
 

@@ -289,6 +289,19 @@ def _entries_from_items(items, source_tag="available-list"):
         if blocked:
             entry["excluded"] = True
             entry["exclude_reason"] = f"blocked（平台绑定状态: {status}，检索/编排不出现）"
+
+        # H1 中文别名：不少技能的中文名只写在正文 H1（frontmatter 全英文），
+        # 不收进触发词，中文 query 在元数据层永远打不中（2026-10-12 对症下药案例）
+        _p = entry.get("path") or ""
+        if _p:
+            try:
+                _base = expand(_p)
+            except Exception:
+                _base = _p
+            _sk = _p if _p.lower().endswith(".md") else os.path.join(_base, "SKILL.md")
+            _h1 = skillmd.extract_h1_title(_sk)
+            if _h1 and any("一" <= c <= "鿿" for c in _h1) and _h1 not in entry["triggers"]:
+                entry["triggers"] = (entry["triggers"] + [_h1])[:10]
         heal_self_entry(entry)
         out.append(entry)
     return out
@@ -329,6 +342,10 @@ def make_skill_entry(skill_dir, sk_path, source, mtime=None):
     zh = meta.get("description_zh")
     if zh and zh != desc:
         entry["description_zh"] = zh
+    # H1 中文别名（磁盘扫描路径）：中文名只写在正文 H1 时自动追加进触发词
+    _h1 = meta.get("h1") or ""
+    if _h1 and any("一" <= c <= "鿿" for c in _h1) and _h1 not in entry["triggers"]:
+        entry["triggers"] = (entry["triggers"] + [_h1])[:10]
     return entry
 
 
