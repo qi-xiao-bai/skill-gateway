@@ -36,8 +36,6 @@ class DashboardStatsScopeTests(unittest.TestCase):
         self.assertNotIn("__STAT_SKILLS__", html)
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class UnboundAnnotationAndFallbackBannerTests(unittest.TestCase):
@@ -60,3 +58,5 @@ class UnboundAnnotationAndFallbackBannerTests(unittest.TestCase):
         self.assertIn("agent-index", txt_missing)
         txt_normal = reports.stats_text(entries, registry_missing=False)
         self.assertNotIn("全机扫描兜底口径", txt_normal)
+if __name__ == "__main__":
+    unittest.main()

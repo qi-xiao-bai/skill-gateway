@@ -6,7 +6,10 @@ import os
 import sys
 import tempfile
 
-import pytest
+try:
+    import pytest
+except ImportError:
+    pytest = None  # 评标环境禁装 pytest：unittest discover 仍可收集本文件的 unittest.TestCase 子集
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -611,4 +614,8 @@ class TestTermsCacheSeparation:
 
 
 if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+    if pytest:
+        pytest.main([__file__, "-v"])
+    else:
+        import unittest
+        unittest.main()

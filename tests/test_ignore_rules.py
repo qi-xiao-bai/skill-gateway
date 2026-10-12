@@ -64,3 +64,20 @@ def test_negation_last_match_wins():
 def test_plain_basename_matches_any_level():
     ig = _ig(["node_modules"])
     assert ig.match(os.path.join(OTHER, "x", "y", "node_modules"), True)
+
+if __name__ == "__main__":
+    # 裸跑兼容：无 pytest 时直接执行全部 test_* 函数
+    import inspect as _insp
+    _mod = _insp.getmodule(_insp.currentframe())
+    _fails = 0
+    for _nm in sorted(dir(_mod)):
+        if _nm.startswith("test_") and callable(getattr(_mod, _nm)):
+            try:
+                getattr(_mod, _nm)()
+                print(f"  PASS {_nm}")
+            except Exception as _ex:
+                _fails += 1
+                print(f"  FAIL {_nm}: {_ex}")
+    print(chr(10) + ('FAILED ' + str(_fails) if _fails else 'ALL PASS'))
+    import sys as _sys
+    _sys.exit(1 if _fails else 0)
