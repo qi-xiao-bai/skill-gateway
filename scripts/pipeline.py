@@ -373,7 +373,7 @@ def build_pipeline(query, entries=None, edges=None, seed_top=SEED_TOP, _retried=
     entries, edges = _load_context(entries, edges)
     global_hits = (retrieval.search(entries, query, top=seed_top,
                                     include_off_list=include_off_list,
-                                    agent_only=agent_only)
+                                    agent_only=agent_only, use_bridge=False)
                    if entries else [])
     seeds = [e for _s, e, _ov in global_hits]
     evidence = {e["name"].lower(): ov for _s, e, ov in global_hits}

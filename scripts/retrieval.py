@@ -178,7 +178,7 @@ def bridge_query_terms(terms):
 
 
 def search(entries, query, top=None, cli_excludes=None, include_excluded=False,
-           include_off_list=False, agent_only=False):
+           include_off_list=False, agent_only=False, use_bridge=True):
     """关键词排序检索（中文 2/3-gram + 英文词，IDF 加权 + 命中位置加权 + Profile置顶提权）。
     - 检索打分 100% 全量覆盖（保证查全率）
     - 位置加权：证据词命中在名称/触发词/仅描述，分别按 LOC_NAME/LOC_TRIGGER/LOC_DESC 系数计分
@@ -204,7 +204,8 @@ def search(entries, query, top=None, cli_excludes=None, include_excluded=False,
         return _single_char_search(
             entries, query, top, cli_excludes, include_excluded, agent_only
         )
-    q = bridge_query_terms(q)  # 中英概念桥：中文词补英文、英文词补中文
+    if use_bridge:
+        q = bridge_query_terms(q)  # 中英概念桥（search/chat 用户检索层）
 
     pinned_set = get_pinned_skills()
     weights = idf(entries)
