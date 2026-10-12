@@ -379,6 +379,40 @@ def cmd_update(a):
     import datetime as _dt
     print(f"[update] 快照 {_dt.datetime.now():%Y-%m-%d %H:%M:%S}：开始增量同步")
     es, st = index_store.update_index(broad)
+    # 层 2 翻译进 update（用户确认）：增量发现的新技能也翻中文描述——
+    # 同缓存+预算机制，每条成功立即存缓存，超时停止下次续翻
+    try:
+        import translate as _tr
+        _miss = [e for e in es if e.get("type") == "skill"
+                 and not e.get("excluded")
+                 and (e.get("visibility") == "ready")
+                 and e.get("description")
+                 and not e.get("description_zh")]
+        if _miss:
+            _ok, _fail = _tr.translate_missing(_miss, time_budget=20.0)
+            if _ok:
+                print(f"[update] 翻译回填 {_ok} 条（缓存续翻，剩余下次）")
+                # 写回登记表（只更新翻译过的条目）
+                import scanner as _sc
+                _avail = _sc.available_list_entries()
+                if _avail is not None:
+                    _by = {x["name"].lower(): x for x in _avail}
+                    for e in es:
+                        if e.get("description_zh") and e["name"].lower() in _by:
+                            _by[e["name"].lower()]["description_zh"] = e["description_zh"]
+                    import paths as _paths
+                    _list = os.path.join(_paths.ROOT, "inputs", "available_skills.json")
+                    if os.path.isfile(_list):
+                        import json as _json2
+                        _doc = _json2.load(open(_list, encoding="utf-8"))
+                        for _it in _doc.get("skills", []):
+                            _k = _it.get("name", "").lower()
+                            if _k in _by and _by[_k].get("description_zh"):
+                                _it["description_zh"] = _by[_k]["description_zh"]
+                        index_store.atomic_write(_list, _json2.dumps(
+                            _doc, ensure_ascii=False, indent=2))
+    except Exception as _ex:
+        print(f"[update] 翻译通道（不影响索引）: {_ex}", file=sys.stderr)
     full = bool(a.full)
     es2, healed = index_store.heal_if_self_only(es, mode="full" if full else "list")
     if healed and healed.get("partial") and full:

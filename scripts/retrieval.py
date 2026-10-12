@@ -115,6 +115,68 @@ def idf(entries):
     return {t: max(0.1, 1.0 + (N - df[t] + 0.5) / (df[t] + 0.5)) for t in df}
 
 
+# 中英概念桥（评标 P3 建议）：中文 query 时同时检索英文描述的同义词——
+# 纯语言知识（周报↔report 是翻译，不是口诀），不硬编码任何技能名。
+# 反向同理：英文 query 也会桥接到中文词，命中 description_zh。
+CONCEPT_BRIDGE = {
+    "周报": ["report", "weekly"], "日报": ["report", "daily"],
+    "报表": ["report", "dashboard"], "技能": ["skill"],
+    "编排": ["orchestrate", "pipeline", "chain"], "串联": ["chain", "pipeline"],
+    "检索": ["search", "retrieve"], "搜索": ["search"],
+    "修复": ["fix", "repair"], "测试": ["test", "testing"],
+    "审查": ["review", "audit"], "检查": ["check", "review"],
+    "翻译": ["translate", "translation"], "文档": ["document", "doc"],
+    "数据": ["data"], "图表": ["chart", "graph", "visualization"],
+    "邮件": ["email", "mail"], "合同": ["contract"],
+    "流程": ["flow", "process", "workflow"], "分析": ["analysis", "analyze"],
+    "优化": ["optimize", "optimization"], "重构": ["refactor", "refactoring"],
+    "清理": ["cleanup", "clean"], "安全": ["security", "vulnerability"],
+    "部署": ["deploy", "deployment"], "开发": ["develop", "development", "coding"],
+    "实现": ["implement", "implementation"], "功能": ["feature", "function"],
+    "页面": ["page", "web", "frontend"], "接口": ["api", "interface"],
+    "工具": ["tool"], "服务": ["service"], "应用": ["app", "application"],
+    "系统": ["system"], "模块": ["module"], "脚本": ["script"],
+    "配置": ["config", "configuration"], "监控": ["monitor", "alert"],
+    "告警": ["alert", "alarm"], "日志": ["log", "logging"],
+    "数据库": ["database", "db"], "缓存": ["cache", "caching"],
+    "同步": ["sync", "synchronize"], "更新": ["update", "upgrade"],
+    "导出": ["export"], "导入": ["import"], "解析": ["parse", "parser"],
+    "生成": ["generate", "create"], "删除": ["delete", "remove"],
+    "查询": ["query", "search", "find"], "统计": ["stats", "statistics"],
+    "可视化": ["visualization", "chart"], "图谱": ["graph", "topology"],
+    "诊断": ["diagnose", "debug", "troubleshoot"], "排错": ["debug", "troubleshoot"],
+    "排查": ["diagnose", "troubleshoot", "investigate"],
+    "报告": ["report", "summary"], "总结": ["summary", "conclusion"],
+    "审批": ["approval", "review"], "卡控": ["gate", "check", "control"],
+    "验证": ["validate", "verify", "test"], "校验": ["validate", "verify"],
+    "转换": ["convert", "transform", "migration"],
+    "自动化": ["automation", "automate", "auto"],
+    "演示": ["demo", "presentation", "slides"],
+    "幻灯片": ["slides", "ppt", "presentation"],
+    "表格": ["table", "spreadsheet", "excel"],
+    "图片": ["image", "picture", "photo"],
+    "视频": ["video"], "音频": ["audio"], "文本": ["text", "content"],
+}
+# 反向桥（英文→中文）：自动从正向桥翻转生成，不重复维护
+_REVERSE_BRIDGE = {}
+for _zh, _ens in CONCEPT_BRIDGE.items():
+    for _en in _ens:
+        _REVERSE_BRIDGE.setdefault(_en, []).append(_zh)
+
+
+def bridge_query_terms(terms):
+    """中英概念桥：query 词元中英互桥——中文词补英文同义词、英文词补中文同义词。
+    纯查询时展开，不改索引、不改存储。返回扩展后的词元集合。"""
+    expanded = set(terms)
+    for t in terms:
+        tl = t.lower()
+        if tl in CONCEPT_BRIDGE:
+            expanded.update(CONCEPT_BRIDGE[tl])
+        if tl in _REVERSE_BRIDGE:
+            expanded.update(_REVERSE_BRIDGE[tl])
+    return expanded
+
+
 def search(entries, query, top=None, cli_excludes=None, include_excluded=False,
            include_off_list=False, agent_only=False):
     """关键词排序检索（中文 2/3-gram + 英文词，IDF 加权 + 命中位置加权 + Profile置顶提权）。
@@ -142,6 +204,7 @@ def search(entries, query, top=None, cli_excludes=None, include_excluded=False,
         return _single_char_search(
             entries, query, top, cli_excludes, include_excluded, agent_only
         )
+    q = bridge_query_terms(q)  # 中英概念桥：中文词补英文、英文词补中文
 
     pinned_set = get_pinned_skills()
     weights = idf(entries)
