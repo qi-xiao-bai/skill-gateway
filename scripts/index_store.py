@@ -49,9 +49,16 @@ def is_stub_file(path):
 def skill_file(e):
     """某技能记录的 SKILL.md 路径。
     没有本地文件（如 import 进来的平台记录，path 为空）时返回 ""，
-    避免 os.path.join("", "SKILL.md") 退化成相对 cwd 的 "SKILL.md"（会误读到别的文件）。"""
+    避免 os.path.join("", "SKILL.md") 退化成相对 cwd 的 "SKILL.md"（会误读到别的文件）。
+    网关自条目（skill-gateway）动态解析：沙箱会话重挂载导致存储的绝对路径跨会话失效，
+    自身位置从运行中代码推导（永远正确），不信任存储的路径——评标第 8 轮实抓。"""
     if e.get("type") != "skill" or not e.get("path"):
         return ""
+    if (e.get("name") or "").lower() == "skill-gateway":
+        import scanner
+        p = scanner.gateway_self_skmd_path()
+        if p and os.path.isfile(p):
+            return p
     return os.path.join(e["path"], "SKILL.md")
 
 
