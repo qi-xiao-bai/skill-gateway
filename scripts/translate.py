@@ -97,19 +97,28 @@ def translate_en_zh(text, timeout=8):
     return ""
 
 
-def translate_missing(entries):
+def translate_missing(entries, time_budget=20.0):
     """给缺中文描述的条目现场翻译并回填（只改内存副本，由调用方落盘到登记表）。
+    time_budget: 秒级预算——超时停止翻译并返回部分结果（平台 30s 限制的防御：
+    先写登记表再翻译，被杀时登记表已在位，下次从缓存续翻）。
     返回 (翻译成功数, 失败数)。"""
+    import time as _time
+    _t0 = _time.time()
     ok = fail = 0
     for it in entries:
         if it.get("description_zh") or not it.get("description"):
             continue
         if re.search(r"[一-鿿]", it["description"][:40]):
             continue  # 描述本来就是中文 → 不翻也不标
+        if _time.time() - _t0 > time_budget:
+            print(f"[translate] 时间预算 {time_budget:.0f}s 已用完，剩余条目下次续翻"
+                  f"（已翻 {ok} / 失败 {fail} / 剩余 {len(entries) - ok - fail}）")
+            break
         zh = translate_en_zh(it["description"])
         if zh:
             it["description_zh"] = zh
             ok += 1
+            _save_cache()  # 每条成功即存缓存——被杀也不丢已翻内容
         else:
             fail += 1
     return ok, fail

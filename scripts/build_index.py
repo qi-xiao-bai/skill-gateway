@@ -235,15 +235,20 @@ def cmd_agent_index(a):
                     break
         print(f"[agent-index] 已写入 {_applied} 条中文描述到登记表")
     # 动态翻译闭环：缺中文描述 → 调翻译 API 现场回填（只写登记表，不碰技能库源文件）
+    # ★ 先写登记表再翻译（平台 30s 限制防御）：
+    # 登记表是权威口径的载体，必须在任何耗时操作（翻译 API、索引重建）之前落盘——
+    # 翻译超时/被杀时登记表已在位，下次续翻从缓存恢复
+    index_store.atomic_write(list_path, json.dumps(doc, ensure_ascii=False, indent=2))
     _need_zh = [it for it in doc.get("skills", [])
                 if agent_name in (it.get("agents") or []) and not it.get("description_zh")]
     if _need_zh and not getattr(a, "no_translate", False):
         try:
             import translate as _tr
-            _ok, _fail = _tr.translate_missing(_need_zh)
+            _ok, _fail = _tr.translate_missing(_need_zh, time_budget=20.0)
             if _ok:
                 print(f"[agent-index] 翻译 API 现场回填中文描述 {_ok} 条"
                       + (f"（{_fail} 条失败，下次重试）" if _fail else ""))
+                index_store.atomic_write(list_path, json.dumps(doc, ensure_ascii=False, indent=2))  # 翻译完的写回
             elif _fail:
                 print(f"[agent-index] 翻译 API 不可达/失败 {_fail} 条（登记表保持原文，下次重试）")
         except Exception as _ex:
@@ -253,7 +258,6 @@ def cmd_agent_index(a):
         print(f"[agent-index] {len(_missing_zh)} 条缺中文描述（如: {'、'.join(_missing_zh[:5])}"
               f"{'…' if len(_missing_zh) > 5 else ''}）。将调用翻译 API 现场生成并写入登记表"
               f"（不触碰技能库源文件）；也可用 --desc-zh-file 手工回传。")
-    index_store.atomic_write(list_path, json.dumps(doc, ensure_ascii=False, indent=2))
     t_list = time.time()
     entries, st = index_store.update_index()
     t_idx = time.time()
