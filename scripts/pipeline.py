@@ -201,7 +201,7 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence, prefs=None):
     # 名称亲和全局预分配：名字与阶段查询有交集的技能，归入其 IDF 加权最优阶段
     # （security-review 的 security 是稀有词 → 必归"安全卡点"，不被"审查把关"的
     #   review 抢走；code-review 的 code+review 双词 → 稳归"审查把关"）
-    # 认领汇总：reserved（名字精确命中阶段保留词）优先，其余按名称亲和归入最优阶段
+    # 认领汇总：按名称亲和（词元交集 × IDF）归入最优阶段——纯打分，无保留词表
     claim_pool = {}  # stage -> set(低技能名)
     for e in entries:
         low = e.get("name", "").lower()

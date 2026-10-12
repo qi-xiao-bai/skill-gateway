@@ -37,7 +37,8 @@ class MetaConsistencyTests(unittest.TestCase):
         for f in os.listdir(SCRIPTS):
             if not f.endswith(".py"):
                 continue
-            src = open(os.path.join(SCRIPTS, f), encoding="utf-8").read()
+            with open(os.path.join(SCRIPTS, f), encoding="utf-8") as _f:
+                src = _f.read()
             for m in re.finditer(r'out_path\("([^"]+)"\)', src):
                 self.assertIn(m.group(1), paths.LEGACY_OUTPUT_FILES,
                               f"{f} 生成 {m.group(1)} 但 clean 名单未覆盖")
@@ -130,8 +131,9 @@ class MetaConsistencyTests(unittest.TestCase):
         口径误导排障）。环境真实连接器由各环境自己登记，源码包零携带。"""
         import json as _json
         import paths as _paths
-        tpl = _json.load(open(os.path.join(_paths.ROOT, "inputs",
-                                           "platform_connectors.json"), encoding="utf-8"))
+        with open(os.path.join(_paths.ROOT, "inputs",
+                                           "platform_connectors.json"), encoding="utf-8") as _fr:
+            tpl = _json.load(_fr)
         self.assertEqual(tpl.get("connectors"), [],
                          "源模板 connectors 必须为空数组——本机快照绝不进参赛包")
 
@@ -147,7 +149,8 @@ class MetaConsistencyTests(unittest.TestCase):
         tmp = _tf.mkdtemp(prefix="skix-noreg-")
         sk = _os.path.join(tmp, "stranger-skill")
         _os.makedirs(sk)
-        open(_os.path.join(sk, "SKILL.md"), "w", encoding="utf-8").write(
+        with open(_os.path.join(sk, "SKILL.md"), "w", encoding="utf-8") as _fw:
+            _fw.write(
             "---" + chr(10) + "name: stranger-skill" + chr(10)
             + "description: 别人的共享库技能 stranger" + chr(10) + "---" + chr(10))
         out_d = _tf.mkdtemp(prefix="skix-noregout-")
@@ -184,8 +187,10 @@ class MetaConsistencyTests(unittest.TestCase):
         out_d = _os.path.join(tmp, "output")
         legacy = _os.path.join(tmp, "memory.md")
         zip_p = _os.path.join(tmp, "skill-gateway.zip")
-        open(legacy, "w", encoding="utf-8").write("legacy artifact")
-        open(zip_p, "w", encoding="utf-8").write("pack deliverable")
+        with open(legacy, "w", encoding="utf-8") as _fw2:
+            _fw2.write("legacy artifact")
+        with open(zip_p, "w", encoding="utf-8") as _fw3:
+            _fw3.write("pack deliverable")
         _orig_root, _orig_outdir_env = _paths.ROOT, _os.environ.get("SKILL_GATEWAY_OUT_DIR")
         _paths._MIGRATED = False
         try:
@@ -278,7 +283,8 @@ class MetaConsistencyTests(unittest.TestCase):
         for fname in os.listdir(base):
             if not fname.endswith(".py"):
                 continue
-            src = open(os.path.join(base, fname), encoding="utf-8").read()
+            with open(os.path.join(base, fname), encoding="utf-8") as _f2:
+                src = _f2.read()
             for m in _re.finditer(r"mkdtemp\([^)]*\)|mkstemp\([^)]*\)", src):
                 call = m.group(0)
                 self.assertIn("skix-", call, f"{fname}: {call} 缺 skix- 前缀")
