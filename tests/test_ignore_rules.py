@@ -20,7 +20,7 @@ def test_starstar_prefix_matches_any_level_and_root():
 
 
 def test_starstar_suffix_requires_relative_base():
-    """`a/**` 含目录分隔符：无相对基准（rel_to/技能根）时不匹配任何路径——
+    r"""`a/**` 含目录分隔符：无相对基准（rel_to/技能根）时不匹配任何路径——
     此前的"逐层后缀"近似会被 CI runner 路径里的 D:\a\... 之类段落造成假阳性。"""
     ig = _ig(["a/**"])
     assert not ig.match(os.path.join(OTHER, "a", "b", "c.txt"), False)

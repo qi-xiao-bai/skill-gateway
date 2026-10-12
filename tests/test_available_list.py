@@ -192,7 +192,8 @@ class AvailableListTests(unittest.TestCase):
                 es = index_store.load_index()
             self.assertTrue(_os.path.isfile(reg_path), "双守门在位时必须建立登记表")
             import json as _json
-            reg = _json.load(open(reg_path, encoding="utf-8"))
+            with open(reg_path, encoding="utf-8") as _rf:
+                reg = _json.load(_rf)
             self.assertEqual(reg.get("current_agent"), "boot-agent")
             names = [x["name"] for x in reg.get("skills", [])]
             self.assertIn("demo-skill", names)

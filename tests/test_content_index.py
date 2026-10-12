@@ -12,7 +12,7 @@ except ImportError:
     pytest = None  # 评标环境禁装 pytest：unittest discover 仍可收集本文件的 unittest.TestCase 子集
 
 sys.dont_write_bytecode = True
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
 
 import content_index as ci
 import retrieval
@@ -617,5 +617,20 @@ if __name__ == "__main__":
     if pytest:
         pytest.main([__file__, "-v"])
     else:
-        import unittest
-        unittest.main()
+        # 裸 stdlib 兜底：pytest 风格 Test* 类（非 unittest.TestCase）→ 逐类逐方法直调
+        import inspect as _insp
+        _mod = _insp.getmodule(_insp.currentframe())
+        _fails = 0
+        for _cn in sorted(dir(_mod)):
+            _cls = getattr(_mod, _cn)
+            if isinstance(_cls, type) and _cn.startswith("Test"):
+                for _mn in sorted(dir(_cls)):
+                    if _mn.startswith("test_"):
+                        try:
+                            getattr(_cls(), _mn)()
+                            print(f"  PASS {_cn}.{_mn}")
+                        except Exception as _ex:
+                            _fails += 1
+                            print(f"  FAIL {_cn}.{_mn}: {_ex}")
+        print("FAILED " + str(_fails) if _fails else "ALL PASS")
+        sys.exit(1 if _fails else 0)
