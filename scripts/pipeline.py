@@ -195,7 +195,10 @@ def _lifecycle_stages(query, entries, domain_seeds, evidence, prefs=None):
         used.add(low)
     n_general = 0
     task_terms = retrieval.terms(query)
-    weights = retrieval.idf(entries)
+    # 统计量与检索同口径：IDF 在可检索池上算，off-list 层不参与刻度
+    #（claim_pool 循环只收非排除条目，weights 口径必须与之一致，否则阶段
+    # 认领的词权重被 off-list 体量污染——见 retrieval.retrievable_pool）
+    weights = retrieval.idf(retrieval.retrievable_pool(entries))
     stage_terms_map = {name: retrieval.terms(q) for name, q in LIFECYCLE_STAGES}
 
     # 名称亲和全局预分配：名字与阶段查询有交集的技能，归入其 IDF 加权最优阶段

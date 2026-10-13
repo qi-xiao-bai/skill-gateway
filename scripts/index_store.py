@@ -421,24 +421,32 @@ def heal_if_self_only(entries, mode="list"):
 
 
 def index_footprint(hit_count=None):
-    """返回索引足迹一行摘要：命中数/总数 | 索引体积 vs 全文体积 | 节省比例。
+    """返回索引足迹一行摘要：命中数/可检索数 | 索引体积 vs 全文体积 | 节省比例。
     hit_count: 本次检索命中数（可选），不传则只显示索引统计。
-    从 meta 缓存读取 l1_chars / full_text_chars，无需重新计算。
-    基线里含桥接「仅描述」占位文件时**不给节省比例**——拿占位当全文，
+    命中分母=可检索口径（非 excluded）：off-list/排除层不参与"命中 X/Y"——
+    拿全量数冒充可检索口径会让"34 项绑定集命中 5/362"显得翻车，实为口径误导
+    （10-13 平台演示预演观察）。从 meta 缓存读取 l1_chars / full_text_chars，
+    无需重新计算。基线里含桥接「仅描述」占位文件时**不给节省比例**——拿占位当全文，
     算出来的压缩率严重偏低（真全文远大于占位），只会误导。"""
     d = read_doc()
     if not d:
         return ""
     meta = d.get("meta") or {}
     n = d.get("count", 0)
+    ents = d.get("entries") or []
+    n_scope = sum(1 for e in ents if not e.get("excluded")) if ents else 0
+    scope_note = ""
+    if ents and n and n_scope != n:
+        scope_note = f"（可检索 {n_scope}，off-list/已排除 {n - n_scope}）"
     l1 = meta.get("l1_chars", 0)
     full = meta.get("full_text_chars", 0)
     n_stub = meta.get("stub", 0)
     parts = []
     if hit_count is not None:
-        parts.append(f"命中 {hit_count}/{n}")
+        denom = n_scope if n_scope else n
+        parts.append(f"命中 {hit_count}/{denom}{scope_note}")
     else:
-        parts.append(f"索引 {n} 项")
+        parts.append(f"索引 {n} 项{scope_note}")
     if l1 and full and n_stub:
         parts.append(f"索引 {l1:,} 字符（基线含 {n_stub} 项占位非全文，压缩率不可比）")
     elif l1 and full:

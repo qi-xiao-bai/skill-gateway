@@ -841,5 +841,64 @@ class TestPipeline(unittest.TestCase):
         self.assertTrue(len(pipe["stages"]) >= 3)
 
 
+class RetrievalPoolScopeTests(unittest.TestCase):
+    """统计量口径 = 可检索池（10-13 平台演示预演 10/14 翻车实抓）。
+    修复前 search() 的 IDF 与证据门槛在全量索引（含 off-list/排除层）上计算：
+    34 ready + 300 off-list 场景下 gate 被抬到满额 6.0（可检索口径应 ~1.02），
+    同时 off-list 的词面 df 又把真命中 IDF 稀释（1.08 vs 应 3.33）——
+    弱证据 ev 0.54 被双向夹杀，泛化问法整批"未命中"。修复=先建池后统计。"""
+
+    def test_gate_not_inflated_by_offlist_noise(self):
+        import retrieval
+        ready = [{"name": f"biz-{i}", "type": "skill",
+                  "description": "会议室闲忙查询" if i < 10 else f"业务技能{i}",
+                  "path": "", "triggers": [], "visibility": "ready"} for i in range(34)]
+        noise = [{"name": f"noise-{i}", "type": "skill", "description": "闲忙 噪声",
+                  "path": "", "triggers": [], "visibility": "off-list",
+                  "excluded": True} for i in range(300)]
+        ents = ready + noise
+        # 池口径：off-list 全部滤除，统计量建立在 34 项可检索池上
+        pool = retrieval.retrievable_pool(ents)
+        self.assertEqual(len(pool), 34)
+        # 行为对拍：修复前该查询返回空（ev≈0.54 < 全量池 gate 6.0），修复后必须命中
+        hits = retrieval.search(ents, "约会议查闲忙", use_bridge=False)
+        self.assertTrue(hits, "off-list 噪声不得抬高证据门槛误杀真命中")
+        self.assertEqual(hits[0][1]["name"], "biz-0")
+
+    def test_retrievable_pool_filter_semantics(self):
+        """池构建与主循环过滤逐条一致：excluded 滤、off-list 仅审计视图放行、
+        blocked 永不放行、agent_only 收窄、网关自身防自环、include_excluded 全放开。"""
+        import retrieval
+        ready = {"name": "a", "excluded": False}
+        off = {"name": "b", "excluded": True, "visibility": "off-list"}
+        blocked = {"name": "c", "excluded": True, "visibility": "blocked"}
+        gw = {"name": "skill-gateway"}
+        unbound = {"name": "d", "agent_bound": False}
+        ents = [ready, off, blocked, gw, unbound]
+        self.assertEqual([e["name"] for e in retrieval.retrievable_pool(ents)],
+                         ["a", "d"])
+        self.assertEqual([e["name"] for e in retrieval.retrievable_pool(
+            ents, include_off_list=True)], ["a", "b", "d"])
+        self.assertEqual([e["name"] for e in retrieval.retrievable_pool(
+            ents, agent_only=True)], ["a"])
+        self.assertEqual([e["name"] for e in retrieval.retrievable_pool(
+            ents, include_excluded=True)], ["a", "b", "c", "d"])
+
+    def test_footprint_scoped_denominator(self):
+        """命中分母=可检索口径：34 绑定集的"命中 5/362"是口径误导，
+        off-list 数量必须明示、分母只算可检索项。"""
+        from unittest import mock
+        doc = {"count": 3,
+               "entries": [{"name": "a", "excluded": True},
+                            {"name": "b", "excluded": False},
+                            {"name": "c", "excluded": False}],
+               "meta": {"l1_chars": 0, "full_text_chars": 0}}
+        with mock.patch.object(pipeline.index_store, "read_doc", return_value=doc):
+            line = pipeline.index_store.index_footprint(1)
+        self.assertIn("命中 1/2", line)
+        self.assertIn("可检索 2", line)
+        self.assertIn("off-list/已排除 1", line)
+
+
 if __name__ == "__main__":
     unittest.main()

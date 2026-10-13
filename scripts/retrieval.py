@@ -177,10 +177,41 @@ def bridge_query_terms(terms):
     return expanded
 
 
+def retrievable_pool(entries, cli_excludes=None, include_excluded=False,
+                     include_off_list=False, agent_only=False):
+    """可检索池 = 主检索循环真正会遍历的条目（过滤条件与原主循环逐条一致）。
+    IDF / 证据门槛等统计量必须在该池上算：在全量索引上算刻度，off-list/排除层的
+    体量会双向污染——证据门槛随 N 抬到满额（34 ready + 328 off-list 实测
+    gate=6.0，可检索口径应 ~1.0，泛化问法弱证据整批被误杀），同时 off-list 的
+    词面 df 又把真命中的 IDF 压到门槛之下，双向夹杀（10-13 平台演示预演
+    10/14 翻车的直接机制）。"""
+    pool = []
+    for e in entries:
+        ename = e.get("name", "")
+        # 排除检查（off-list 仅在 include_off_list=True 的全量审计视图放行）
+        if not include_excluded:
+            if e.get("excluded") and not (
+                include_off_list and e.get("visibility") == "off-list"
+            ):
+                continue
+            is_ex, _ = is_skill_excluded(ename, cli_excludes)
+            if is_ex:
+                continue
+        # Agent 绑定口径（--agent 收窄，非默认）：未绑定当前 Agent 的技能不出现
+        if agent_only and e.get("agent_bound") is False:
+            continue
+        # 防自环：排除 skill-gateway 自身
+        if ename == "skill-gateway":
+            continue
+        pool.append(e)
+    return pool
+
+
 def search(entries, query, top=None, cli_excludes=None, include_excluded=False,
            include_off_list=False, agent_only=False, use_bridge=True):
     """关键词排序检索（中文 2/3-gram + 英文词，IDF 加权 + 命中位置加权 + Profile置顶提权）。
-    - 检索打分 100% 全量覆盖（保证查全率）
+    - 检索打分 100% 覆盖可检索池（保证查全率；IDF/证据门槛也在该池上算，
+      off-list/排除层的体量不参与刻度——见 retrievable_pool）
     - 位置加权：证据词命中在名称/触发词/仅描述，分别按 LOC_NAME/LOC_TRIGGER/LOC_DESC 系数计分
     - 排除过滤：过滤命中 .skillexclude / config / profile / CLI 的条目；
       include_off_list=True 时放行 visibility=off-list（平台未绑定，仅全量审计视图），
@@ -208,30 +239,18 @@ def search(entries, query, top=None, cli_excludes=None, include_excluded=False,
         q = bridge_query_terms(q)  # 中英概念桥（search/chat 用户检索层）
 
     pinned_set = get_pinned_skills()
-    weights = idf(entries)
+    # 统计量口径 = 可检索池：先过滤后打分，IDF/门槛不得被 off-list 层污染
+    #（详见 retrievable_pool 的口径说明——刻度对了，弱证据才不会被双向夹杀）
+    pool = retrievable_pool(entries, cli_excludes, include_excluded,
+                            include_off_list, agent_only)
+    weights = idf(pool)
     # 证据质量门槛随库规模缩放：大库（N≥200）用满 EVIDENCE_MIN_WEIGHT 拦高频凑数；
     # 小库 IDF 天花板低（2 条目的库罕见词也只有 ~1.7），按比例缩放避免全库出局
-    gate = EVIDENCE_MIN_WEIGHT * min(1.0, max(len(entries), 1) / 200.0)
+    gate = EVIDENCE_MIN_WEIGHT * min(1.0, max(len(pool), 1) / 200.0)
     scored = []
     max_ev = 0.0  # 剪枝基准：scored 中的最大证据权重（加分/提权之前）
-    for e in entries:
+    for e in pool:
         ename = e.get("name", "")
-        # 排除检查（off-list 仅在 include_off_list=True 的全量审计视图放行）
-        if not include_excluded:
-            if e.get("excluded") and not (
-                include_off_list and e.get("visibility") == "off-list"
-            ):
-                continue
-            is_ex, _ = is_skill_excluded(ename, cli_excludes)
-            if is_ex:
-                continue
-        # Agent 绑定口径（--agent 收窄，非默认）：未绑定当前 Agent 的技能不出现
-        if agent_only and e.get("agent_bound") is False:
-            continue
-        # 防自环：排除 skill-gateway 自身
-        if ename == "skill-gateway":
-            continue
-
         overlap = q & entry_terms(e)
         if not overlap:
             continue
