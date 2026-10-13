@@ -273,12 +273,13 @@ def proactive_post_hook(cmd, context=None):
         add_n = len(st.get("added", []))
         upd_n = len(st.get("updated", []))
         rem_n = len(st.get("removed", []))
-        if has_changes:
+        if has_changes and (add_n or upd_n or rem_n):
             result["updated"] = True
             result["st"] = st
             result["msg"] = (
-                f"{reason}（自动增量同步：新增 {add_n} / 更新 {upd_n} / 移除 {rem_n}），知识图谱已无感自愈。"
+                f"增量同步：新增 {add_n} / 更新 {upd_n} / 移除 {rem_n}"
             )
+        # 变更全零 → 静默通过，不打印任何提示
     else:
         # 未触发更新也同步状态
         if not state.get("last_roots_fingerprint"):
