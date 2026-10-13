@@ -1665,7 +1665,7 @@ COMMANDS = [
     {
         "name": "audit",
         "usage": "audit [--top N]",
-        "help": "Token 账本：量化索引 vs 全文的上下文压缩率",
+        "help": "Token 账本明细：库容量级 / 地图密度 / 选型注入经济学（实时实算）",
         "handler": "cmd_audit",
         "args": [(("--top",), {"type": int, "default": 10})],
     },

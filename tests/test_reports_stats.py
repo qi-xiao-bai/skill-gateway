@@ -60,39 +60,52 @@ class UnboundAnnotationAndFallbackBannerTests(unittest.TestCase):
         txt_normal = reports.stats_text(entries, registry_missing=False)
         self.assertNotIn("全机扫描兜底口径", txt_normal)
 class TokenEconomyLiveLedgerTests(unittest.TestCase):
-    """stats 内嵌 Token 账本：数字一律本轮现场实算、零写死、同集合铁律。
-    - 真文件 → 压缩率现场算出；全文加长，压缩率必须立刻跟着变（写死必然露馅）
+    """stats 内嵌 Token 账本：数字一律本轮现场实算、零写死、对比方向正确。
+    方向铁律（10-13 用户纠偏）：各平台原生即渐进式披露，不存在"全库全文加载"
+    的反事实基线——账本只给三种诚实口径：库容量级（容量≠注入的事实）、
+    地图密度（地址簿/全库，不给"省 X% 上下文"）、选型注入经济学
+    （top-K 命中行 vs 清单全量自扫，池小于 K 时如实报 0%）。
+    - 真文件 → 密度/注入比现场算出；全文加长，密度必须立刻跟着变（写死必然露馅）
     - 兜底态（条目全 off-list / excluded）→ 没有可比基线就明说，
       不许拿「全部技能全文」当分母、「仅可用技能 L1」当分子算出「省 100%」的假账
     - 空索引 → 明说无账可算，不打印无意义的零"""
 
-    def test_ready_skill_compression_is_live(self):
+    def test_density_and_injection_are_live(self):
         with tempfile.TemporaryDirectory() as td:
-            skmd = os.path.join(td, "SKILL.md")
-            with open(skmd, "w", encoding="utf-8") as f:
-                f.write("# 演示\n" + "细节内容" * 200)
-            e = {"name": "live-skill", "type": "skill", "description": "实算",
-                 "path": td, "triggers": ["演示"], "source": "test"}
-            eco = reports.token_economy([e])
-            self.assertGreater(eco["full_chars"], 800)
-            self.assertIsNotNone(eco["compression_pct"])
-            self.assertLess(eco["compression_pct"], 100.0)
-            self.assertGreater(eco["reduction_x"], 1.0)
-            # 零写死证据：全文加长，压缩率必须立刻变小
-            with open(skmd, "w", encoding="utf-8") as f:
+            ents = []
+            for i in range(10):
+                d = os.path.join(td, f"s{i}")
+                os.makedirs(d)
+                with open(os.path.join(d, "SKILL.md"), "w", encoding="utf-8") as f:
+                    f.write("# 演示\n" + "细节内容" * 200)
+                ents.append({"name": f"live-{i}", "type": "skill",
+                             "description": f"实算{i}", "path": d,
+                             "triggers": ["演示"], "source": "test"})
+            eco = reports.token_economy(ents)
+            self.assertIsNotNone(eco["density_pct"])
+            self.assertGreater(eco["density_x"], 1.0)
+            # 选型注入：10 项池注入 top-K 行 vs 清单全量 10 行——比例现场实算
+            expected = 100.0 * (1.0 - min(eco["top_k"], 10) / 10.0)
+            self.assertAlmostEqual(eco["inject_saving_pct"], expected, delta=0.5)
+            # 零写死证据：全文加长，地图密度必须立刻变大
+            with open(os.path.join(td, "s0", "SKILL.md"), "w", encoding="utf-8") as f:
                 f.write("# 演示\n" + "细节内容" * 400)
-            eco2 = reports.token_economy([e])
-            self.assertLess(eco2["compression_pct"], eco["compression_pct"])
-            # stats 文本必须携带账本段 + 本轮实测计时（ms）
-            txt = reports.stats_text([e], [], registry_missing=False)
-            self.assertIn("Token 账本", txt)
+            eco2 = reports.token_economy(ents)
+            self.assertGreater(eco2["density_x"], eco["density_x"])
+            txt = reports.stats_text(ents, [], registry_missing=False)
+            self.assertIn("地图密度", txt)
+            self.assertIn("选型注入", txt)
+            self.assertIn("渐进式披露", txt)   # 方向声明必须在场（对比基线纠偏）
+            self.assertNotIn("压缩至", txt)    # 旧"全文→L1 压缩至 X%"错误基线口径不得回潮
+            self.assertNotIn("省 100", txt)
             self.assertIn("ms", txt)
 
     def test_offlist_fallback_refuses_fake_ratio(self):
         e = {"name": "off-skill", "type": "skill", "description": "d", "path": "",
              "triggers": [], "excluded": True, "source": "test"}
         eco = reports.token_economy([e])
-        self.assertIsNone(eco["compression_pct"])
+        self.assertIsNone(eco["density_pct"])
+        self.assertIsNone(eco["inject_saving_pct"])
         txt = reports.stats_text([e], [], registry_missing=True)
         self.assertIn("暂无可比基线", txt)
         self.assertNotIn("省 100", txt)

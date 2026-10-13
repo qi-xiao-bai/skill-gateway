@@ -7,9 +7,9 @@
 一个**技能资产中枢型元技能（meta-skill）**：把数字员工与 Agent 平台上"上百个孤立技能"变成**可编排、可看见、可治理**的基础设施。
 
 - **能力一：多技能智能串联编排（Multi-Skill Pipeline Chaining）**：针对开发完整需求、故障排查等复合任务，基于**知识图谱拓扑边（`depends_on` 依赖、`contains` 包含、`similar` 相似）**做 Kahn 拓扑分层，自动把相关技能编排为端到端**流水线 DAG**。阶段数量与顺序由图谱边决定；查不出依赖关系时输出并行候选（列候选与检索证据，由执行 Agent 甄别采纳）。
-- **能力二：技能资产可视化报表（Visibility & Reporting）**：**关系图谱 dashboard**（节点/关系边/平台→Agent 双口径下钻，单文件离线可用）+ **命中率账本**（ledger：零命中 query 自动转能力缺口工单、技能命中/采纳榜、僵尸技能盘点）+ **Token 经济审计**（audit：索引 vs 全文压缩率）+ **覆盖口径报表**（stats：平台可用/未绑定/已排除三档与缺口清单）——技能资产现状与治理点一图看全。
+- **能力二：技能资产可视化报表（Visibility & Reporting）**：**关系图谱 dashboard**（节点/关系边/平台→Agent 双口径下钻，单文件离线可用）+ **命中率账本**（ledger：零命中 query 自动转能力缺口工单、技能命中/采纳榜、僵尸技能盘点）+ **Token 经济审计**（audit：库容量级/地图密度/选型注入经济学，实时实算）+ **覆盖口径报表**（stats：平台可用/未绑定/已排除三档与缺口清单）——技能资产现状与治理点一图看全。
 - **能力三：检索打分与代理直达（Scoring & Proxy）**：单点需求经 IDF 加权打分**秒级匹配最佳技能并代理执行**；候选打分并列时列证据交人工确认，零命中自动转能力缺口工单——选型有据、缺口可见。
-- **按需加载（渐进式披露）**：平台启动只加载轻量索引（L1），真正要用某技能时才加载全文（L2），避免上下文爆炸。
+- **按需注入（与平台原生渐进式披露同构）**：清单知识按需进入上下文，检索每次只注入 top-K 命中行而非全清单自扫，真正要用某技能时才取全文（L2）；单次选型的注入经济学由 `stats` / `audit` 实时实算。
 
 ## 目录结构
 ```
@@ -69,7 +69,7 @@ skill-gateway/
 | `python scripts/build_index.py content-find <query>` | **正文检索**：查代码定义与规则所在文件及行号 |
 | `python scripts/build_index.py onboard <技能名>` | 生成技能上手指南（结构化入门） |
 | `python scripts/build_index.py diff <技能名>` | 技能变更影响分析（直接下游/二级依赖） |
-| `python scripts/build_index.py audit [--top N]` | **Token 账本**：量化上下文压缩率 |
+| `python scripts/build_index.py audit [--top N]` | **Token 账本明细**：库容量级 / 地图密度 / 选型注入经济学 |
 | `python scripts/build_index.py bundle` | 生成 **L0/L1/L2 + 关系图 + `boot.md`**（可上传网页） |
 | `python scripts/build_index.py doctor [--graph]` | **技能体检**与图谱质量审查 |
 | `python scripts/build_index.py export <格式>` | 多格式导出（`minjson` 含关系边） |
@@ -184,7 +184,7 @@ python scripts/platform_bridge.py --status   # 看状态
 python scripts/platform_bridge.py            # 重建镜像 + 索引
 ```
 但要分清：这条命令重建的是**元数据**。**完整 SKILL.md 全文从来不在 ①②④ 里** —— 要全量索引，必须先回平台逐技能取回全文（`--mode full` 默认就要求这一点）；**全文一旦丢了是恢复不了的**。
-**并且 `index` / `update` / 任何读命令都自带自愈**：`list` / `search` / `stats` 这类命令发现**索引不存在会自动建一次**；只要发现"只扫到本技能自己"且技能包里有平台清单，就自动落镜像并重扫（`SKILL_GATEWAY_NO_AUTO=1` 关闭）。**构建分两档，绝不静默冒充**：`index` / `update` 默认建**元数据索引**（一行一技能：名字+描述+触发词，仅定位/路由用，诚实标注、无压缩率数字）；`index --full` / `update --full` 才是**全量构建**——要求清单含完整 SKILL.md 正文，缺任何一项就**中止（rc=2）、不写索引**，并打印"怎么取全文"的步骤。`detail` / `audit` / `content-find` / `bundle` 这些要正文的命令遇到元数据索引会明确提示"需要全文 → 跑 `index --full`"（或按步骤回平台取回），**拿占位元数据冒充"构建完成"是禁止的**。
+**并且 `index` / `update` / 任何读命令都自带自愈**：`list` / `search` / `stats` 这类命令发现**索引不存在会自动建一次**；只要发现"只扫到本技能自己"且技能包里有平台清单，就自动落镜像并重扫（`SKILL_GATEWAY_NO_AUTO=1` 关闭）。**构建分两档，绝不静默冒充**：`index` / `update` 默认建**元数据索引**（一行一技能：名字+描述+触发词，仅定位/路由用，诚实标注、无地图密度数字）；`index --full` / `update --full` 才是**全量构建**——要求清单含完整 SKILL.md 正文，缺任何一项就**中止（rc=2）、不写索引**，并打印"怎么取全文"的步骤。`detail` / `audit` / `content-find` / `bundle` 这些要正文的命令遇到元数据索引会明确提示"需要全文 → 跑 `index --full`"（或按步骤回平台取回），**拿占位元数据冒充"构建完成"是禁止的**。
 
 > **两点诚实提醒**
 > 1. 平台 `list` 只给 name/description，**不含完整 SKILL.md 正文**。拿它建出来的是"元数据索引"，`audit` 会**拒绝给出压缩率**（基线不是全文，算了也是假的）。要真索引就按 `--mode full` 提示的步骤先取全文。

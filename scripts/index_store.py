@@ -421,13 +421,13 @@ def heal_if_self_only(entries, mode="list"):
 
 
 def index_footprint(hit_count=None):
-    """返回索引足迹一行摘要：命中数/可检索数 | 索引体积 vs 全文体积 | 节省比例。
+    """返回索引足迹一行摘要：命中数/可检索数 | 地图密度（L1 触达全库，不给"节省 X%"口径）。
     hit_count: 本次检索命中数（可选），不传则只显示索引统计。
     命中分母=可检索口径（非 excluded）：off-list/排除层不参与"命中 X/Y"——
     拿全量数冒充可检索口径会让"34 项绑定集命中 5/362"显得翻车，实为口径误导
     （10-13 平台演示预演观察）。从 meta 缓存读取 l1_chars / full_text_chars，
-    无需重新计算。基线里含桥接「仅描述」占位文件时**不给节省比例**——拿占位当全文，
-    算出来的压缩率严重偏低（真全文远大于占位），只会误导。"""
+    无需重新计算。基线里含桥接「仅描述」占位文件时**不给密度**——拿占位当全文，
+    算出来的密度严重偏低（真全文远大于占位），只会误导。"""
     d = read_doc()
     if not d:
         return ""
@@ -448,11 +448,10 @@ def index_footprint(hit_count=None):
     else:
         parts.append(f"索引 {n} 项{scope_note}")
     if l1 and full and n_stub:
-        parts.append(f"索引 {l1:,} 字符（基线含 {n_stub} 项占位非全文，压缩率不可比）")
+        parts.append(f"索引 {l1:,} 字符（基线含 {n_stub} 项占位非全文，密度不可比）")
     elif l1 and full:
-        pct = 100 * l1 / full
-        parts.append(f"索引 {l1:,} vs 全文 {full:,} 字符")
-        parts.append(f"节省 {100 - pct:.1f}% token")
+        parts.append(f"L1 地图 {l1:,} 触达全库 {full:,} 字符"
+                     f"（1/{max(full / max(l1, 1), 1):.0f}，全文按需 detail 不预载）")
     elif l1:
         parts.append(f"索引 {l1:,} 字符")
     return "[skill-gateway] " + " | ".join(parts) if parts else ""

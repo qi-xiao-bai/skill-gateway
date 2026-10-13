@@ -36,12 +36,15 @@ def _namelist(names, limit=8):
 
 
 def token_economy(entries, with_rows=False):
-    """Token 经济核心计算：全文 vs L1/L0，每次调用现场实算，零写死。
-    stats 摘要与 audit 明细共用这一份口径，防止两处算法漂移。
-    压缩率铁律=分子分母同集合：基线只算「可检索」技能的全文（与 index_store._retrievable
-    同口径），分子也只算这些技能的 L1。兜底态（无登记表→全标 off-list）没有可比基线，
-    宁可不给数字，也不许拿两个不同集合算出「省 100%」的假账。
-    io_full_ms / io_index_ms = 本轮 perf_counter 实测装载耗时（逐文件读全文 vs 构建索引文本）。"""
+    """Token 经济核心计算：每轮现场实算，零写死。stats 摘要与 audit 明细共用，防漂移。
+    对比方向（10-13 用户纠偏）：各平台原生即渐进式披露——清单常驻、命中才取全文，
+    **不存在"全库全文加载"的反事实基线**，绝不给"省 X% 上下文"的口径。真实经济=：
+    ① 库容量级（地图/全库，容量≠注入的事实陈述）；② 选型注入（检索每次只注入
+    top-K 命中行 vs 清单全量给模型自扫）；③ 读图 vs 开卷（L1 单行 vs 全文单份，
+    仅描述不足需开全文甄别时兑现）。
+    同集合铁律：以上比值只在「可检索」技能集合内算（与 index_store._retrievable 同口径）；
+    兜底态（无登记表→全标 off-list）没有可比基线，宁可不给数字。
+    io_full_ms / io_index_ms = 本轮 perf_counter 实测装载耗时。"""
     import time as _time
     t0 = _time.perf_counter()
     rows = []
@@ -59,23 +62,39 @@ def token_economy(entries, with_rows=False):
     n_stub = sum(1 for _c, stub, _e in rows if stub)
     n_skill = sum(1 for e in entries if e["type"] == "skill")
     no_file = sum(1 for c, _stub, e in rows if e["type"] == "skill" and not c)
-    # ── 压缩率：只在可检索集合内同集合对比（分母=可检索技能全文，分子=其 L1）──
+    # ── 地图密度：只在可检索集合内同集合对比（分母=可检索技能全文，分子=其 L1）──
     retr_rows = [(c, stub, e) for c, stub, e in rows
                  if e["type"] == "skill" and not e.get("excluded")]
     retr_full = sum(c for c, _stub, _e in retr_rows)
     retr_stub = sum(1 for _c, stub, _e in retr_rows if stub)
     retr_skills = [e for _c, _stub, e in retr_rows]
     l1_retr = len(index_store.dense_text(retr_skills)) if retr_skills else 0
-    compression = reduction = None
+    density_pct = density_x = None
     if retr_full and not retr_stub:
-        compression = 100.0 * l1_retr / retr_full
-        reduction = retr_full / max(l1_retr, 1)
+        density_pct = 100.0 * l1_retr / retr_full
+        density_x = retr_full / max(l1_retr, 1)
+    # ── 选型注入经济学：top-K 命中行 vs 清单全量自扫 ──────────────────
+    header_chars = len(index_store.dense_text([]))
+    pool_n = len(retr_skills)
+    avg_line = (l1_retr - header_chars) / pool_n if pool_n else 0.0
+    n_retr_files = sum(1 for c, _s, _e in retr_rows if c)
+    avg_full = (retr_full / n_retr_files) if n_retr_files else 0.0
+    try:
+        top_k = int(retrieval.get_retrieval_quota_config().get("top_k", 8))
+    except Exception:
+        top_k = 8
+    inject_chars = avg_line * min(top_k, pool_n)
+    list_chars = avg_line * pool_n
+    inject_saving = (100.0 * (1.0 - inject_chars / list_chars)) if list_chars > 0 else None
     eco = {
         "full_chars": total_full, "l1_chars": l1, "l1_skill_chars": l1_skills,
         "l0_chars": l0, "stub_n": n_stub, "skill_n": n_skill,
         "no_file_n": no_file, "entry_n": len(entries),
-        "retr_skill_n": len(retr_skills), "retr_full_chars": retr_full,
-        "compression_pct": compression, "reduction_x": reduction,
+        "retr_skill_n": pool_n, "retr_full_chars": retr_full,
+        "density_pct": density_pct, "density_x": density_x,
+        "avg_line_chars": avg_line, "avg_full_chars": avg_full,
+        "top_k": top_k, "inject_chars": inject_chars, "list_chars": list_chars,
+        "inject_saving_pct": inject_saving,
         "io_full_ms": io_full_ms, "io_index_ms": io_index_ms,
     }
     if with_rows:
@@ -98,28 +117,37 @@ def stats_text(entries, edges=None, registry_missing=None):
     eco = token_economy(entries)
     out.append("## Token 账本（本轮实时计算；完整明细用 `audit`）")
     if eco["entry_n"]:
-        out.append(f"  全文(所有 SKILL.md)   : {eco['full_chars']:>10,} 字符 "
+        out.append("  库容量级（容量≠注入：各平台原生即渐进式披露，无智能体全库加载）")
+        out.append(f"  全库全文(所有 SKILL.md)   : {eco['full_chars']:>10,} 字符 "
                    f"≈ {est_tokens(eco['full_chars']):>9,} tokens")
-        out.append(f"  L1 索引(dense，含头块): {eco['l1_chars']:>10,} 字符 "
+        out.append(f"  L1 地图(dense，含头块)   : {eco['l1_chars']:>10,} 字符 "
                    f"≈ {est_tokens(eco['l1_chars']):>9,} tokens")
-        out.append(f"  L0 索引(仅名字)      : {eco['l0_chars']:>10,} 字符 "
+        out.append(f"  L0 索引(仅名字)          : {eco['l0_chars']:>10,} 字符 "
                    f"≈ {est_tokens(eco['l0_chars']):>9,} tokens")
-        if eco["compression_pct"] is not None:
-            pct = eco["compression_pct"]
-            # 极端压缩比下 .1f 会打出「0.0% / 省 100.0%」的精度假象，小值升到 .2f
+        if eco["density_x"] is not None:
+            pct = eco["density_pct"]
+            # 极端密度下 .1f 会打出「0.0%」的精度假象，小值升到 .2f
             pct_s = f"{pct:.2f}" if pct < 0.1 else f"{pct:.1f}"
-            sav_s = f"{100 - pct:.2f}" if pct < 0.1 else f"{100 - pct:.1f}"
-            out.append(f"  启动注入对比         : {eco['retr_skill_n']} 项可用技能，"
-                       f"全文→L1 压缩至 {pct_s}%，约减 {eco['reduction_x']:.0f}×，"
-                       f"省 {sav_s}% 上下文")
+            out.append(f"  地图密度                 : 地图/全库 ≈ {pct_s}%（1/{eco['density_x']:.0f}）"
+                       "——一份地址簿按需 detail 直达任意条目，全文不预载")
+            sav = eco["inject_saving_pct"]
+            sav_s = f"{sav:.0f}" if sav is not None else "0"
+            out.append(f"  选型注入(真实对比方向)   : 检索每次只注入 top-{eco['top_k']} 命中行 "
+                       f"≈ {eco['inject_chars']:,.0f} 字符；清单全量给模型自扫 "
+                       f"≈ {eco['list_chars']:,.0f} 字符（{eco['retr_skill_n']} 行）"
+                       f"→ 每次选型少注入 {sav_s}%")
+            out.append(f"  读图 vs 开卷             : L1 单行均值 {eco['avg_line_chars']:.0f} 字符 / "
+                       f"全文单份均值 {eco['avg_full_chars']:,.0f} 字符 "
+                       f"≈ {eco['avg_full_chars'] / max(eco['avg_line_chars'], 1):.0f}×"
+                       "（描述不足需开全文甄别时才兑现）")
         elif eco["stub_n"]:
             out.append(f"  ⚠ {eco['stub_n']}/{eco['skill_n']} 项为桥接占位（非全文），"
-                       "压缩率不可比，不给出")
+                       "地图密度不可比，不给出")
         elif not eco["retr_full_chars"]:
             out.append("  （暂无可比基线：平台口径下没有带全文的可用技能——先跑 agent-index / update）")
         if eco["no_file_n"]:
-            out.append(f"  注：{eco['no_file_n']} 项无本地全文未计入分母 → 压缩率偏乐观（audit 有明细）")
-        out.append(f"  本地装载实测(计时)   : 全文 {eco['io_full_ms']:.1f} ms / "
+            out.append(f"  注：{eco['no_file_n']} 项无本地全文未计入密度分母 → 数字偏乐观（audit 有明细）")
+        out.append(f"  本地装载实测(计时)       : 全文 {eco['io_full_ms']:.1f} ms / "
                    f"索引 {eco['io_index_ms']:.1f} ms（每轮现场计时）")
     else:
         out.append("  （空索引，无账可算）")
@@ -210,8 +238,10 @@ def stats_text(entries, edges=None, registry_missing=None):
 
 
 def audit_text(entries, top=10):
-    """量化"索引 vs 全文"的上下文压缩率（口径=token_economy，与 stats 内嵌账本零漂移）。
-    若基线里有桥接「仅描述」占位文件，**不给压缩率** —— 拿占位文件当全文算出来的百分比没有意义。"""
+    """Token 账本明细：库容量级 / 地图密度 / 选型注入经济学（口径=token_economy，
+    与 stats 内嵌摘要零漂移）。对比方向=各平台原生渐进式披露（清单常驻、命中取全文），
+    不存在"全库加载"基线——10-13 用户纠偏后不再给"省 X% 上下文"口径。
+    若基线里有桥接「仅描述」占位文件，**不给地图密度** —— 拿占位文件当全文算出来的数没有意义。"""
     eco = token_economy(entries, with_rows=True)
     rows = eco["rows"]
     total_full = eco["full_chars"]
@@ -241,15 +271,23 @@ def audit_text(entries, top=10):
     ]
     if n_stub:
         out.append(f"- ⚠ 基线里 {n_stub}/{n_skill} 项是桥接「仅描述」占位文件（--mode list），"
-                   "**不是完整 SKILL.md** → 压缩率不可比，故不给出。")
-        out.append("  要真实压缩率：回平台逐技能 load 完整 SKILL.md 后按 --mode full 重跑。")
+                   "**不是完整 SKILL.md** → 地图密度不可比，故不给出。")
+        out.append("  要真实地图密度：回平台逐技能 load 完整 SKILL.md 后按 --mode full 重跑。")
     elif no_file:
         out.append(f"- 注：{no_file} 项没有本地全文（import/平台记录），未计入「全文合计」分母，"
-                   "故压缩率会偏乐观")
-    if eco["compression_pct"] is not None:
-        pct = eco["compression_pct"]
-        out.append(f"- 压缩率 L1(仅技能行)/全文: {pct:.1f}%  ⇒ 省 {100 - pct:.1f}% 上下文")
-        out.append(f"- 启动字符量约减少 {eco['reduction_x']:.0f}×")
+                   "故密度会偏乐观")
+    if eco["density_pct"] is not None:
+        pct = eco["density_pct"]
+        pct_s = f"{pct:.2f}" if pct < 0.1 else f"{pct:.1f}"
+        out.append(f"- 地图密度 L1(仅技能行)/全文: {pct_s}%（1/{eco['density_x']:.0f}）——"
+                   "一份地址簿按需 detail 直达全库，全文不预载（容量≠注入，不给\"省 X%\"口径）")
+        out.append(f"- 选型注入: 每次检索只注入 top-{eco['top_k']} 命中行 "
+                   f"≈ {eco['inject_chars']:,.0f} 字符 vs 清单全量自扫 "
+                   f"≈ {eco['list_chars']:,.0f} 字符 → 少注入 {(eco['inject_saving_pct'] or 0):.0f}%")
+        out.append(f"- 读图 vs 开卷: L1 单行均值 {eco['avg_line_chars']:.0f} 字符 / "
+                   f"全文单份均值 {eco['avg_full_chars']:,.0f} 字符 "
+                   f"≈ {eco['avg_full_chars'] / max(eco['avg_line_chars'], 1):.0f}×"
+                   "（描述不足需开全文甄别时才兑现）")
     n_clip = sum(1 for e in entries if index_store.desc_clipped(e))
     if n_clip:
         out.append(f"- 注：dense 索引里 {n_clip}/{len(entries)} 条描述被 "
