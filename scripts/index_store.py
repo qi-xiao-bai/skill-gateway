@@ -583,8 +583,27 @@ def update_index(broad="auto", query=None, targeted=False):
         if e["name"] in seen_names:
             continue
         seen_names.add(e["name"])
+        # 缺陷 2 修复（评标第 16 轮实抓）：自愈重建丢触发词——
+        # 旧条目（登记表/导入带来的）triggers 与磁盘扫描 triggers 取并集，
+        # 防止登记表的手工触发词被磁盘扫描覆盖清空（实测 14 个被清空）
+        if o is not None and o.get("triggers"):
+            _old_t = set(o["triggers"])
+            _new_t = set(e.get("triggers", []))
+            e["triggers"] = list(_old_t | _new_t)[:10]
         (updated if o is not None else added).append(e["name"])
         out.append(e)
+
+    # 缺陷 1 修复（评标第 16 轮实抓）：自愈合并丢 import/available-list
+    # 无磁盘副本的条目——裸 import 环境（登记表被抹）自愈重扫以磁盘为基准，
+    # 平台云技能不在磁盘上就会被吞。保留 source=available-list/import 的条目。
+    for o in old:
+        if o.get("type") != "skill" or o.get("excluded"):
+            continue
+        if o.get("source") in ("available-list", "profile-authoritative", "import") \
+                and o["name"] not in seen_names:
+            out.append(o)
+            seen_names.add(o["name"])
+            kept.append(o["name"])
 
     # MCP：配置很小，直接重扫后按名 diff；跨类型同名（技能 "foo" 与 MCP "foo"）在此统一去重，
     # 否则 doctor 的重名告警与 related/图谱全被污染
