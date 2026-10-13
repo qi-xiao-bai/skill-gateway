@@ -515,6 +515,8 @@ LEGACY_OUTPUT_FILES = [
     "corrections.md",
     # 命中率账本（检索/采纳事件，本机运行时数据）
     "hit-ledger.jsonl",
+    # 注入台账（网关命令注入量，bench 数据源，本机运行时数据）
+    "usage-ledger.jsonl",
     # pack 构建产物（源目录里的交付 zip）
     "skill-gateway.zip",
     # 翻译 API 缓存（translate.py，可再生）

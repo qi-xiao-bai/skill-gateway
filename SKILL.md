@@ -1,6 +1,6 @@
 ---
 name: skill-gateway
-description: 多技能 DAG 编排与技能资产报表中枢。复合任务自动编排端到端流水线（阶段由知识图谱拓扑生成）；技能资产一图看全——关系图谱 dashboard、命中率账本、Token 经济审计（地图密度/选型注入，实时实算）、覆盖口径与体检报告；附检索打分选型与代理直达。触发词：技能编排、技能串联、技能流水线、技能图谱、技能报表、技能体检、技能索引、意图路由、技能网关
+description: 多技能 DAG 编排与技能资产报表中枢。复合任务自动编排端到端流水线（阶段由知识图谱拓扑生成）；技能资产一图看全——关系图谱 dashboard、命中率账本、Token 经济审计（单次选型对比/注入台账，实时实算）、覆盖口径与体检报告；附检索打分选型与代理直达。触发词：技能编排、技能串联、技能流水线、技能图谱、技能报表、技能体检、技能索引、意图路由、技能网关
 version: "5"
 ---
 
@@ -96,7 +96,7 @@ pipeline 处理开发任务时按开发生命周期检索编排。**契约只定
    *(联动时：`[skill-gateway] 检索: 命中 [<目标技能名>] (联动: [<技能B>]、[<技能C>])`)*
 2. **多技能编排（全部模式，CLI 不预生成——提名单属工作单，不进脚注；执行 Agent 按真实调用生成，无调用则无脚注）**：`[skill-gateway] 调用链: [实际加载技能A] → [实际加载技能B]`
 
-3. **纯检索**：`[skill-gateway] 命中 <N>/<可检索Total> | L1 地图 <IdxChars> 触达全库 <FullChars> 字符（1/<R>，全文按需 detail 不预载）`
+3. **纯检索**：`[skill-gateway] 命中 <N>/<可检索Total> | 索引 <IdxChars> / 全库 <FullChars> 字符（1/<R>）`
 
 > 占位符由 CLI 实际返回值填充，请勿硬编码数字。
 
@@ -135,7 +135,7 @@ skill-gateway/
 | 调度 | `chat` / `route` / `pipeline` / `chain` | 意图路由、代理直达、多技能编排 |
 | 检索 | `search` / `list` / `related` / `content-find` / `explain` / `detail` / `onboard` / `diff` | 关键词检索、浏览、关联、正文、上手、影响 |
 | 索引 | `index` / `update` / `add` / `roots` / `import` / `clean` | 重建（默认元数据档，`--full` 全量）/增量/追加/诊断/导入/清理 |
-| 输出 | `audit` / `stats` / `doctor` / `bundle` / `export` / `catalog` / `dashboard` | 账本明细/覆盖口径+Token 账本摘要/体检/打包/导出/总览/图谱 |
+| 输出 | `audit` / `stats` / `bench` / `doctor` / `bundle` / `export` / `catalog` / `dashboard` | 账本明细/口径+单次选型对比/注入台账+A/B 实测/体检/打包/导出/总览/图谱 |
 | 画像 | `profile` / `memory` | 用户画像与指令管理、活跃记忆与纠偏 |
 
 > 完整参数、示例与意图路由映射见 [`references/commands.md`](references/commands.md)。
@@ -154,7 +154,7 @@ skill-gateway/
 | 看全文 | `detail <名>` |
 | 相似/关联 | `related <名>` |
 | 搜代码 | `content-find` |
-| Token 账本（地图密度 / 选型注入经济学） | `stats`（摘要，含本轮实测计时）/ `audit`（完整明细+最重技能） |
+| Token 对比（单次选型 / 累计实测） | `stats`（单次选型对比）/ `bench`（注入台账 + A/B 会话对比）/ `audit`（完整明细+最重技能） |
 | 体检 | `doctor` |
 
 > 完整映射见 [`references/commands.md`](references/commands.md#意图路由话术--命令)。

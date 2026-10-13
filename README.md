@@ -7,9 +7,9 @@
 一个**技能资产中枢型元技能（meta-skill）**：把数字员工与 Agent 平台上"上百个孤立技能"变成**可编排、可看见、可治理**的基础设施。
 
 - **能力一：多技能智能串联编排（Multi-Skill Pipeline Chaining）**：针对开发完整需求、故障排查等复合任务，基于**知识图谱拓扑边（`depends_on` 依赖、`contains` 包含、`similar` 相似）**做 Kahn 拓扑分层，自动把相关技能编排为端到端**流水线 DAG**。阶段数量与顺序由图谱边决定；查不出依赖关系时输出并行候选（列候选与检索证据，由执行 Agent 甄别采纳）。
-- **能力二：技能资产可视化报表（Visibility & Reporting）**：**关系图谱 dashboard**（节点/关系边/平台→Agent 双口径下钻，单文件离线可用）+ **命中率账本**（ledger：零命中 query 自动转能力缺口工单、技能命中/采纳榜、僵尸技能盘点）+ **Token 经济审计**（audit：库容量级/地图密度/选型注入经济学，实时实算）+ **覆盖口径报表**（stats：平台可用/未绑定/已排除三档与缺口清单）——技能资产现状与治理点一图看全。
+- **能力二：技能资产可视化报表（Visibility & Reporting）**：**关系图谱 dashboard**（节点/关系边/平台→Agent 双口径下钻，单文件离线可用）+ **命中率账本**（ledger：零命中 query 自动转能力缺口工单、技能命中/采纳榜、僵尸技能盘点）+ **Token 经济审计**（audit：单次选型对比/容量明细，实时实算）+ **注入台账与 A/B 实测**（bench）+ **覆盖口径报表**（stats：平台可用/未绑定/已排除三档与缺口清单）——技能资产现状与治理点一图看全。
 - **能力三：检索打分与代理直达（Scoring & Proxy）**：单点需求经 IDF 加权打分**秒级匹配最佳技能并代理执行**；候选打分并列时列证据交人工确认，零命中自动转能力缺口工单——选型有据、缺口可见。
-- **按需注入（与平台原生渐进式披露同构）**：清单知识按需进入上下文，检索每次只注入 top-K 命中行而非全清单自扫，真正要用某技能时才取全文（L2）；单次选型的注入经济学由 `stats` / `audit` 实时实算。
+- **按需注入与实测台账**：选型只注入 top-K 命中行而非全清单；命令注入量自动记台账（`bench` 查累计），A/B 会话实测差值即提升（同一任务两遍跑法，Σtoken 取自平台会话看板）。
 
 ## 目录结构
 ```
@@ -69,7 +69,8 @@ skill-gateway/
 | `python scripts/build_index.py content-find <query>` | **正文检索**：查代码定义与规则所在文件及行号 |
 | `python scripts/build_index.py onboard <技能名>` | 生成技能上手指南（结构化入门） |
 | `python scripts/build_index.py diff <技能名>` | 技能变更影响分析（直接下游/二级依赖） |
-| `python scripts/build_index.py audit [--top N]` | **Token 账本明细**：库容量级 / 地图密度 / 选型注入经济学 |
+| `python scripts/build_index.py audit [--top N]` | **Token 账本明细**：单次选型对比 / 全文单份均值 / 容量明细 |
+| `python scripts/build_index.py bench [<基线Σtoken> <网关Σtoken>]` | **注入台账与 A/B 实测**：不带参数查台账累计；带两数出会话差值 |
 | `python scripts/build_index.py bundle` | 生成 **L0/L1/L2 + 关系图 + `boot.md`**（可上传网页） |
 | `python scripts/build_index.py doctor [--graph]` | **技能体检**与图谱质量审查 |
 | `python scripts/build_index.py export <格式>` | 多格式导出（`minjson` 含关系边） |

@@ -23,8 +23,9 @@
 | `explain` | 单个技能的详细使用建议 | `<技能名>` |
 | `detail` | 按需打印某技能完整 `SKILL.md` | `<技能名>` |
 | `related` | 找相关的其他技能（读索引里存好的关系边 `depends_on`/`contains`/`overlap`/`similar`） | `<技能名>` `--top N` |
-| `stats` | **覆盖口径**：按来源/类型、全文覆盖、缺什么、关系图；**内嵌 Token 账本摘要**（本轮实时计算，含装载计时与选型注入经济学） | — |
-| `audit` | Token 账本**完整明细**：库容量级/地图密度/选型注入经济学、最重技能榜（与 stats 内嵌摘要同一口径） | `--top N` |
+| `stats` | **覆盖口径**：按来源/类型、全文覆盖、缺什么、关系图；**内嵌单次选型 Token 对比**（每次实时计算） | — |
+| `audit` | Token 账本**完整明细**：库容量级/单次选型对比/全文单份均值/索引对全库比、最重技能榜 | `--top N` |
+| `bench` | **注入台账与 A/B 实测**：不带参数=网关命令注入量台账（实测累计）；`bench <基线Σtoken> <网关Σtoken>`=会话差值——跑法：同一任务先不调用网关跑一遍、再调用网关跑一遍，两遍会话 Σtoken 从平台会话看板取值 | `<基线Σtoken> <网关Σtoken>` |
 | `bundle` | 生成 L0/L1/L2 分片 + 关系图 + `boot.md` | — |
 | `doctor` | 技能体检：坏/空描述、缺触发词、超大技能、重名、路径缺失、图谱连通性 | `--graph` `--fix` |
 | `export` | 多格式导出（`minjson` 含关系边） | `minjson\|md\|csv\|txt` |
@@ -52,7 +53,7 @@
 | 导入技能清单 / 平台没落盘 / 我贴给你 | `import <文件\|-\|文本>` |
 | 不想索引某个目录 / 跳过 node_modules / 忽略规则 | 写 `.skillignore`（见下） |
 | 生成上传包 / 打包 / boot | `bundle` |
-| Token 注入经济学 / 地图密度 | `stats`（摘要）或 `audit`（完整明细） |
+| Token 对比（单次选型/累计实测） | `stats` / `audit` / `bench`（A/B 会话差值） |
 | 体检技能质量 | `doctor` |
 | 导出 csv / json / markdown | `export <minjson\|md\|csv\|txt>` |
 | 统计 / 来源分布 / 覆盖了哪些 | `stats` |
@@ -122,12 +123,12 @@ python scripts/platform_bridge.py --only clean    # 清理上次镜像
 **`index` / `update` / 任何读命令都自带自愈**：`list` / `search` / `stats` 这类命令发现**索引不存在会自动建一次**；
 只要发现"只扫到本技能自己"且技能包里有平台清单，就自动落镜像并重扫。
 **自愈跟随构建档位（两档，绝不静默冒充）**：`index` / `update` 默认建**元数据索引**（诚实标注"仅定位/路由用"，
-不编地图密度数字）；`index --full` / `update --full` 才是**全量构建**——清单缺完整 SKILL.md 就**中止（rc=2）、不写索引**
+不编密度数字）；`index --full` / `update --full` 才是**全量构建**——清单缺完整 SKILL.md 就**中止（rc=2）、不写索引**
 并打印取全文步骤。读命令自愈默认同元数据档，`SKILL_GATEWAY_NO_AUTO=1` 关闭，桥接子进程 `SKILL_GATEWAY_BRIDGE_RUN=1` 防递归。
 **日常不必手动敲 `index`**，它只在想强制全量重扫时才用。
 
 > 诚实提醒：平台 `list` 只给 name/description，**不含完整 SKILL.md 正文**；拿它建出来的是"元数据索引"，
-> `audit` 会**拒绝给出地图密度**（基线不是全文）。要真索引就按 `--mode full` 提示的步骤先取全文。
+> `audit` 会**拒绝给出密度**（基线不是全文）。要真索引就按 `--mode full` 提示的步骤先取全文。
 > 平台自带 `skill_follow(list/load)` 时，它就是"有哪些技能/怎么用"的实时索引；
 > 桥接的价值在 `audit`（token 账本）/ `bundle`（L0/L1/L2）/ `export`（跨平台导出）这些 indexer 独有能力。
 

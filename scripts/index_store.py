@@ -421,7 +421,7 @@ def heal_if_self_only(entries, mode="list"):
 
 
 def index_footprint(hit_count=None):
-    """返回索引足迹一行摘要：命中数/可检索数 | 地图密度（L1 触达全库，不给"节省 X%"口径）。
+    """返回索引足迹一行摘要：命中数/可检索数 | 索引对全库比。
     hit_count: 本次检索命中数（可选），不传则只显示索引统计。
     命中分母=可检索口径（非 excluded）：off-list/排除层不参与"命中 X/Y"——
     拿全量数冒充可检索口径会让"34 项绑定集命中 5/362"显得翻车，实为口径误导
@@ -450,8 +450,7 @@ def index_footprint(hit_count=None):
     if l1 and full and n_stub:
         parts.append(f"索引 {l1:,} 字符（基线含 {n_stub} 项占位非全文，密度不可比）")
     elif l1 and full:
-        parts.append(f"L1 地图 {l1:,} 触达全库 {full:,} 字符"
-                     f"（1/{max(full / max(l1, 1), 1):.0f}，全文按需 detail 不预载）")
+        parts.append(f"索引 {l1:,} / 全库 {full:,} 字符（1/{max(full / max(l1, 1), 1):.0f}）")
     elif l1:
         parts.append(f"索引 {l1:,} 字符")
     return "[skill-gateway] " + " | ".join(parts) if parts else ""

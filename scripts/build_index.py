@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # build_index.py - skill-gateway CLI 入口（子命令分发）
 # 子命令: index / update / add / roots / import / list / search / explain / detail / related
-#         / stats / audit / bundle / doctor / export / route / catalog / help
+#         / stats / audit / bench / bundle / doctor / export / route / catalog / help
 # created 2026-09-09, updated 2026-09-16 qjl: 拆分为多模块(scripts/) + 新增 doctor / export
 # updated 2026-09-16 qjl: 新增 roots(扫描根探针) / import(导入外部技能清单)
 import argparse
@@ -28,6 +28,7 @@ import proactive  # noqa: E402
 import reports  # noqa: E402
 import retrieval  # noqa: E402
 import route as route_mod  # noqa: E402
+import usage as usage_mod  # noqa: E402
 import scanner as scanner_mod  # noqa: E402
 from paths import out_path  # noqa: E402
 
@@ -783,6 +784,18 @@ def cmd_stats(a):
 
 def cmd_audit(a):
     print(reports.audit_text(index_store.load_index(), a.top))
+
+
+def cmd_bench(a):
+    """注入台账与 A/B 对比：两个数都在=会话对比（数字取自平台会话看板读数）；
+    都不在=台账汇总。只给一个不成立。"""
+    baseline = getattr(a, "baseline", None)
+    gateway = getattr(a, "gateway", None)
+    if (baseline is None) != (gateway is None):
+        print("用法：bench <基线Σtoken> <网关Σtoken>（两个都给），或不带参数查台账",
+              file=sys.stderr)
+        return
+    print(usage_mod.bench_text(baseline, gateway))
 
 
 def cmd_bundle(a):
@@ -1665,9 +1678,17 @@ COMMANDS = [
     {
         "name": "audit",
         "usage": "audit [--top N]",
-        "help": "Token 账本明细：库容量级 / 地图密度 / 选型注入经济学（实时实算）",
+        "help": "Token 账本明细：库容量级 / 单次选型对比 / 全文单份均值（实时实算）",
         "handler": "cmd_audit",
         "args": [(("--top",), {"type": int, "default": 10})],
+    },
+    {
+        "name": "bench",
+        "usage": "bench [<基线Σtoken> <网关Σtoken>]",
+        "help": "Token 实测：网关注入台账（不带参数）/ A/B 会话对比（带两个数）",
+        "handler": "cmd_bench",
+        "args": [(("baseline",), {"type": int, "nargs": "?"}),
+                 (("gateway",), {"type": int, "nargs": "?"})],
     },
     {
         "name": "bundle",
@@ -1911,6 +1932,11 @@ def main():
     if handler is None:
         p.print_help()
         return RC_ERROR
+    # 注入台账：套一层 stdout 计数代理，命令打印多少字符就记多少（bench 自身除外）
+    real_stdout = sys.stdout
+    tee = usage_mod.CountingStdout(real_stdout) if args.cmd not in usage_mod.SKIP_RECORD else None
+    if tee:
+        sys.stdout = tee
     try:
         handler(args)
     except SystemExit:
@@ -1921,6 +1947,10 @@ def main():
         print(f"[error] 命令 '{args.cmd}' 执行失败: {ex}", file=sys.stderr)
         traceback.print_exc()
         sys.exit(RC_ERROR)
+    finally:
+        sys.stdout = real_stdout
+        if tee and tee.chars:
+            usage_mod.record(args.cmd, tee.chars)
     return RC_OK
 
 
