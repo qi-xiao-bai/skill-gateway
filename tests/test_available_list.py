@@ -22,6 +22,28 @@ def _write_list(root, items):
         f.write('{"skills": ' + items + "}")
 
 
+def _restore_reg_file(reg_path, bak):
+    """还原登记表/根记忆快照（bak=None 表示源态=不存在，删掉）。
+    Windows 上刚落盘的 JSON 可能被杀软/索引器短暂锁住，os.remove / atomic_write
+    偶发 PermissionError——一旦在 finally 里抛出，测试既失败又泄漏脏状态，
+    之后每次"通过"的运行还会把脏内容当快照忠实还原（自我延续污染，10-13 全量
+    实抓）。故：短暂重试；重试耗尽仍失败必须大声失败，绝不静默吞掉。"""
+    import time as _time
+    import index_store
+    for attempt in range(4):
+        try:
+            if bak is None:
+                if os.path.isfile(reg_path):
+                    os.remove(reg_path)
+            else:
+                index_store.atomic_write(reg_path, bak)
+            return
+        except OSError:
+            if attempt == 3:
+                raise
+            _time.sleep(0.3)
+
+
 class AvailableListTests(unittest.TestCase):
     def setUp(self):
         self._old_root = scanner.ROOT
@@ -204,17 +226,9 @@ class AvailableListTests(unittest.TestCase):
             _os.environ.pop("SKILL_GATEWAY_OUT_DIR", None)
             scanner.ROOT = _real_root
             # 还原真实登记表与根记忆（自举测试绝不能污染真机状态）
-            if _bak is None:
-                _os.path.isfile(reg_path) and _os.remove(reg_path)
-            else:
-                import index_store as _is2
-                _is2.atomic_write(reg_path, _bak)
-            rp = _os.path.join(_paths.ROOT, "inputs", "env_skill_roots.json")
-            if _bak_roots is None:
-                _os.path.isfile(rp) and _os.remove(rp)
-            else:
-                import index_store as _is3
-                _is3.atomic_write(rp, _bak_roots)
+            _restore_reg_file(reg_path, _bak)
+            _restore_reg_file(_os.path.join(_paths.ROOT, "inputs",
+                                            "env_skill_roots.json"), _bak_roots)
 
         # 场景 B：身份在但记忆根缺 → 登记表绝不落盘（永不父目录兜底）
         reg_path2 = reg_path
@@ -230,11 +244,7 @@ class AvailableListTests(unittest.TestCase):
         finally:
             _os.environ.pop("SKILL_GATEWAY_AGENT", None)
             _os.environ.pop("SKILL_GATEWAY_OUT_DIR", None)
-            if _bak is not None:
-                import index_store as _is4
-                _is4.atomic_write(reg_path2, _bak)
-            elif _os.path.isfile(reg_path2):
-                _os.remove(reg_path2)
+            _restore_reg_file(reg_path2, _bak)
 
     def test_self_heal_verifies_target_exists(self):
         """P0 根治（评标第 8 轮实抓）：自愈目标必须存在性验证——平台执行形态下

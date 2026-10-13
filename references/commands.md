@@ -23,8 +23,8 @@
 | `explain` | 单个技能的详细使用建议 | `<技能名>` |
 | `detail` | 按需打印某技能完整 `SKILL.md` | `<技能名>` |
 | `related` | 找相关的其他技能（读索引里存好的关系边 `depends_on`/`contains`/`overlap`/`similar`） | `<技能名>` `--top N` |
-| `stats` | **覆盖口径**：按来源/类型、全文覆盖、缺什么、关系图 | — |
-| `audit` | Token 账本：量化索引 vs 全文压缩率 | `--top N` |
+| `stats` | **覆盖口径**：按来源/类型、全文覆盖、缺什么、关系图；**内嵌 Token 账本摘要**（本轮实时计算，含装载计时） | — |
+| `audit` | Token 账本**完整明细**：量化索引 vs 全文压缩率、最重技能榜（与 stats 内嵌摘要同一口径） | `--top N` |
 | `bundle` | 生成 L0/L1/L2 分片 + 关系图 + `boot.md` | — |
 | `doctor` | 技能体检：坏/空描述、缺触发词、超大技能、重名、路径缺失、图谱连通性 | `--graph` `--fix` |
 | `export` | 多格式导出（`minjson` 含关系边） | `minjson\|md\|csv\|txt` |
@@ -52,7 +52,7 @@
 | 导入技能清单 / 平台没落盘 / 我贴给你 | `import <文件\|-\|文本>` |
 | 不想索引某个目录 / 跳过 node_modules / 忽略规则 | 写 `.skillignore`（见下） |
 | 生成上传包 / 打包 / boot | `bundle` |
-| 省了多少 token / 压缩率 | `audit` |
+| 省了多少 token / 压缩率 / 提速多少 | `stats`（摘要）或 `audit`（完整明细） |
 | 体检技能质量 | `doctor` |
 | 导出 csv / json / markdown | `export <minjson\|md\|csv\|txt>` |
 | 统计 / 来源分布 / 覆盖了哪些 | `stats` |

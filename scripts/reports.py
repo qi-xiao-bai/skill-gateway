@@ -35,6 +35,54 @@ def _namelist(names, limit=8):
     return f"{shown} …(共 {len(names)} 个)" if len(names) > limit else shown
 
 
+def token_economy(entries, with_rows=False):
+    """Token 经济核心计算：全文 vs L1/L0，每次调用现场实算，零写死。
+    stats 摘要与 audit 明细共用这一份口径，防止两处算法漂移。
+    压缩率铁律=分子分母同集合：基线只算「可检索」技能的全文（与 index_store._retrievable
+    同口径），分子也只算这些技能的 L1。兜底态（无登记表→全标 off-list）没有可比基线，
+    宁可不给数字，也不许拿两个不同集合算出「省 100%」的假账。
+    io_full_ms / io_index_ms = 本轮 perf_counter 实测装载耗时（逐文件读全文 vs 构建索引文本）。"""
+    import time as _time
+    t0 = _time.perf_counter()
+    rows = []
+    for e in entries:
+        c, stub = skill_chars(e)
+        rows.append((c, stub, e))
+    io_full_ms = (_time.perf_counter() - t0) * 1000.0
+    t0 = _time.perf_counter()
+    l1 = len(index_store.dense_text(entries))
+    skill_only = [e for e in entries if e["type"] == "skill"]
+    l1_skills = len(index_store.dense_text(skill_only)) if skill_only else 0
+    l0 = len(index_store.l0_text(entries))
+    io_index_ms = (_time.perf_counter() - t0) * 1000.0
+    total_full = sum(c for c, _stub, _e in rows)
+    n_stub = sum(1 for _c, stub, _e in rows if stub)
+    n_skill = sum(1 for e in entries if e["type"] == "skill")
+    no_file = sum(1 for c, _stub, e in rows if e["type"] == "skill" and not c)
+    # ── 压缩率：只在可检索集合内同集合对比（分母=可检索技能全文，分子=其 L1）──
+    retr_rows = [(c, stub, e) for c, stub, e in rows
+                 if e["type"] == "skill" and not e.get("excluded")]
+    retr_full = sum(c for c, _stub, _e in retr_rows)
+    retr_stub = sum(1 for _c, stub, _e in retr_rows if stub)
+    retr_skills = [e for _c, _stub, e in retr_rows]
+    l1_retr = len(index_store.dense_text(retr_skills)) if retr_skills else 0
+    compression = reduction = None
+    if retr_full and not retr_stub:
+        compression = 100.0 * l1_retr / retr_full
+        reduction = retr_full / max(l1_retr, 1)
+    eco = {
+        "full_chars": total_full, "l1_chars": l1, "l1_skill_chars": l1_skills,
+        "l0_chars": l0, "stub_n": n_stub, "skill_n": n_skill,
+        "no_file_n": no_file, "entry_n": len(entries),
+        "retr_skill_n": len(retr_skills), "retr_full_chars": retr_full,
+        "compression_pct": compression, "reduction_x": reduction,
+        "io_full_ms": io_full_ms, "io_index_ms": io_index_ms,
+    }
+    if with_rows:
+        eco["rows"] = rows
+    return eco
+
+
 def stats_text(entries, edges=None, registry_missing=None):
     """registry_missing：是否缺权威登记表（available_skills.json）。None=自动探测。
     缺表时一切条目按全机兜底口径视为可用——必须在报告里显著声明，防止被误读为
@@ -45,6 +93,37 @@ def stats_text(entries, edges=None, registry_missing=None):
     import datetime as _dt
     out = [f"# 索引统计（覆盖口径）：共 {cov['total']} 项"
            f"（skill {cov['skill']} / mcp {cov['mcp']}）（快照 {_dt.datetime.now():%Y-%m-%d %H:%M:%S}）", ""]
+
+    # Token 账本摘要：与本轮加载的真实索引现场对账，零写死（完整明细/最重技能用 `audit`）
+    eco = token_economy(entries)
+    out.append("## Token 账本（本轮实时计算；完整明细用 `audit`）")
+    if eco["entry_n"]:
+        out.append(f"  全文(所有 SKILL.md)   : {eco['full_chars']:>10,} 字符 "
+                   f"≈ {est_tokens(eco['full_chars']):>9,} tokens")
+        out.append(f"  L1 索引(dense，含头块): {eco['l1_chars']:>10,} 字符 "
+                   f"≈ {est_tokens(eco['l1_chars']):>9,} tokens")
+        out.append(f"  L0 索引(仅名字)      : {eco['l0_chars']:>10,} 字符 "
+                   f"≈ {est_tokens(eco['l0_chars']):>9,} tokens")
+        if eco["compression_pct"] is not None:
+            pct = eco["compression_pct"]
+            # 极端压缩比下 .1f 会打出「0.0% / 省 100.0%」的精度假象，小值升到 .2f
+            pct_s = f"{pct:.2f}" if pct < 0.1 else f"{pct:.1f}"
+            sav_s = f"{100 - pct:.2f}" if pct < 0.1 else f"{100 - pct:.1f}"
+            out.append(f"  启动注入对比         : {eco['retr_skill_n']} 项可用技能，"
+                       f"全文→L1 压缩至 {pct_s}%，约减 {eco['reduction_x']:.0f}×，"
+                       f"省 {sav_s}% 上下文")
+        elif eco["stub_n"]:
+            out.append(f"  ⚠ {eco['stub_n']}/{eco['skill_n']} 项为桥接占位（非全文），"
+                       "压缩率不可比，不给出")
+        elif not eco["retr_full_chars"]:
+            out.append("  （暂无可比基线：平台口径下没有带全文的可用技能——先跑 agent-index / update）")
+        if eco["no_file_n"]:
+            out.append(f"  注：{eco['no_file_n']} 项无本地全文未计入分母 → 压缩率偏乐观（audit 有明细）")
+        out.append(f"  本地装载实测(计时)   : 全文 {eco['io_full_ms']:.1f} ms / "
+                   f"索引 {eco['io_index_ms']:.1f} ms（每轮现场计时）")
+    else:
+        out.append("  （空索引，无账可算）")
+    out.append("")
 
     out.append("## 按来源（谁贡献了多少）")
     for s, c in cov["by_source"].items():
@@ -131,22 +210,19 @@ def stats_text(entries, edges=None, registry_missing=None):
 
 
 def audit_text(entries, top=10):
-    """量化"索引 vs 全文"的上下文压缩率。
+    """量化"索引 vs 全文"的上下文压缩率（口径=token_economy，与 stats 内嵌账本零漂移）。
     若基线里有桥接「仅描述」占位文件，**不给压缩率** —— 拿占位文件当全文算出来的百分比没有意义。"""
-    rows = []
-    for e in entries:
-        c, stub = skill_chars(e)
-        rows.append((c, stub, e))
-    total_full = sum(c for c, _, _ in rows)
-    n_stub = sum(1 for _, stub, _ in rows if stub)
-    n_skill = sum(1 for e in entries if e["type"] == "skill")
-    no_file = sum(1 for c, _, e in rows if e["type"] == "skill" and not c)
-    l1 = index_store.dense_text(entries)   # 按**真实加载的整份文件**算（含头块），不虚报
-    l0 = index_store.l0_text(entries)
-    # 压缩率口径：分子分母必须同集合。分母只有技能全文，那分子也只用技能条目的 L1
-    #（此前用整份 l1 含全部 MCP 行，MCP 一多压缩率能算出「省 -3.2%」的荒谬数字）
-    skill_only = [e for e in entries if e["type"] == "skill"]
-    l1_skills = len(index_store.dense_text(skill_only)) if skill_only else 0
+    eco = token_economy(entries, with_rows=True)
+    rows = eco["rows"]
+    total_full = eco["full_chars"]
+    n_stub = eco["stub_n"]
+    n_skill = eco["skill_n"]
+    no_file = eco["no_file_n"]
+    l1 = eco["l1_chars"]   # 按**真实加载的整份文件**算（含头块），不虚报
+    l0 = eco["l0_chars"]
+    # 压缩率口径：分子分母必须同集合（分母只有技能全文，分子也只用技能条目的 L1）——
+    # 该口径统一收口在 token_economy，stats/audit 两处不允许各自为政
+    l1_skills = eco["l1_skill_chars"]
 
     if n_stub and n_stub == n_skill:
         base = f"- 镜像占位合计(仅描述，非全文) : {total_full:>10,} 字符 ≈ {est_tokens(total_full):>8,} tokens"
@@ -160,8 +236,8 @@ def audit_text(entries, top=10):
         "# Token 账本（audit）",
         f"技能 {n_skill} 项 / MCP {len(entries) - n_skill} 项，共 {len(entries)} 项",
         base,
-        f"- L1 索引(dense，含头块)   : {len(l1):>10,} 字符 ≈ {est_tokens(len(l1)):>8,} tokens",
-        f"- L0 索引(仅名字)          : {len(l0):>10,} 字符 ≈ {est_tokens(len(l0)):>8,} tokens",
+        f"- L1 索引(dense，含头块)   : {l1:>10,} 字符 ≈ {est_tokens(l1):>8,} tokens",
+        f"- L0 索引(仅名字)          : {l0:>10,} 字符 ≈ {est_tokens(l0):>8,} tokens",
     ]
     if n_stub:
         out.append(f"- ⚠ 基线里 {n_stub}/{n_skill} 项是桥接「仅描述」占位文件（--mode list），"
@@ -170,10 +246,10 @@ def audit_text(entries, top=10):
     elif no_file:
         out.append(f"- 注：{no_file} 项没有本地全文（import/平台记录），未计入「全文合计」分母，"
                    "故压缩率会偏乐观")
-    if total_full and not n_stub:
-        pct = 100 * l1_skills / total_full if total_full else 0
+    if eco["compression_pct"] is not None:
+        pct = eco["compression_pct"]
         out.append(f"- 压缩率 L1(仅技能行)/全文: {pct:.1f}%  ⇒ 省 {100 - pct:.1f}% 上下文")
-        out.append(f"- 启动字符量约减少 {total_full / max(l1_skills, 1):.0f}×")
+        out.append(f"- 启动字符量约减少 {eco['reduction_x']:.0f}×")
     n_clip = sum(1 for e in entries if index_store.desc_clipped(e))
     if n_clip:
         out.append(f"- 注：dense 索引里 {n_clip}/{len(entries)} 条描述被 "

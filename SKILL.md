@@ -135,7 +135,7 @@ skill-gateway/
 | 调度 | `chat` / `route` / `pipeline` / `chain` | 意图路由、代理直达、多技能编排 |
 | 检索 | `search` / `list` / `related` / `content-find` / `explain` / `detail` / `onboard` / `diff` | 关键词检索、浏览、关联、正文、上手、影响 |
 | 索引 | `index` / `update` / `add` / `roots` / `import` / `clean` | 重建（默认元数据档，`--full` 全量）/增量/追加/诊断/导入/清理 |
-| 输出 | `audit` / `stats` / `doctor` / `bundle` / `export` / `catalog` / `dashboard` | 账本/口径/体检/打包/导出/总览/图谱 |
+| 输出 | `audit` / `stats` / `doctor` / `bundle` / `export` / `catalog` / `dashboard` | 账本明细/覆盖口径+Token 账本摘要/体检/打包/导出/总览/图谱 |
 | 画像 | `profile` / `memory` | 用户画像与指令管理、活跃记忆与纠偏 |
 
 > 完整参数、示例与意图路由映射见 [`references/commands.md`](references/commands.md)。
@@ -154,7 +154,7 @@ skill-gateway/
 | 看全文 | `detail <名>` |
 | 相似/关联 | `related <名>` |
 | 搜代码 | `content-find` |
-| 压缩率 | `audit` |
+| Token 账本（省了多少） | `stats`（摘要，含本轮实测计时）/ `audit`（完整明细+最重技能） |
 | 体检 | `doctor` |
 
 > 完整映射见 [`references/commands.md`](references/commands.md#意图路由话术--命令)。

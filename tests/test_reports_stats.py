@@ -2,6 +2,7 @@
 # test_reports_stats.py - dashboard 顶栏统计口径 = 可见（非 excluded），与检索/编排一致
 import os
 import sys
+import tempfile
 import unittest
 
 sys.dont_write_bytecode = True
@@ -58,5 +59,48 @@ class UnboundAnnotationAndFallbackBannerTests(unittest.TestCase):
         self.assertIn("agent-index", txt_missing)
         txt_normal = reports.stats_text(entries, registry_missing=False)
         self.assertNotIn("全机扫描兜底口径", txt_normal)
+class TokenEconomyLiveLedgerTests(unittest.TestCase):
+    """stats 内嵌 Token 账本：数字一律本轮现场实算、零写死、同集合铁律。
+    - 真文件 → 压缩率现场算出；全文加长，压缩率必须立刻跟着变（写死必然露馅）
+    - 兜底态（条目全 off-list / excluded）→ 没有可比基线就明说，
+      不许拿「全部技能全文」当分母、「仅可用技能 L1」当分子算出「省 100%」的假账
+    - 空索引 → 明说无账可算，不打印无意义的零"""
+
+    def test_ready_skill_compression_is_live(self):
+        with tempfile.TemporaryDirectory() as td:
+            skmd = os.path.join(td, "SKILL.md")
+            with open(skmd, "w", encoding="utf-8") as f:
+                f.write("# 演示\n" + "细节内容" * 200)
+            e = {"name": "live-skill", "type": "skill", "description": "实算",
+                 "path": td, "triggers": ["演示"], "source": "test"}
+            eco = reports.token_economy([e])
+            self.assertGreater(eco["full_chars"], 800)
+            self.assertIsNotNone(eco["compression_pct"])
+            self.assertLess(eco["compression_pct"], 100.0)
+            self.assertGreater(eco["reduction_x"], 1.0)
+            # 零写死证据：全文加长，压缩率必须立刻变小
+            with open(skmd, "w", encoding="utf-8") as f:
+                f.write("# 演示\n" + "细节内容" * 400)
+            eco2 = reports.token_economy([e])
+            self.assertLess(eco2["compression_pct"], eco["compression_pct"])
+            # stats 文本必须携带账本段 + 本轮实测计时（ms）
+            txt = reports.stats_text([e], [], registry_missing=False)
+            self.assertIn("Token 账本", txt)
+            self.assertIn("ms", txt)
+
+    def test_offlist_fallback_refuses_fake_ratio(self):
+        e = {"name": "off-skill", "type": "skill", "description": "d", "path": "",
+             "triggers": [], "excluded": True, "source": "test"}
+        eco = reports.token_economy([e])
+        self.assertIsNone(eco["compression_pct"])
+        txt = reports.stats_text([e], [], registry_missing=True)
+        self.assertIn("暂无可比基线", txt)
+        self.assertNotIn("省 100", txt)
+
+    def test_empty_index_ledger_says_so(self):
+        txt = reports.stats_text([], [], registry_missing=False)
+        self.assertIn("空索引，无账可算", txt)
+
+
 if __name__ == "__main__":
     unittest.main()
