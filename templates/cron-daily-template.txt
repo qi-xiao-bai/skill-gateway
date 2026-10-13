@@ -1,0 +1,6 @@
+运行技能网关例行维护（先 skill_follow 加载 skill-gateway 再按其命令执行；单条命令控制在 30 秒内）：
+① /skill-gateway stats 自检登记表是否在位；若登记表缺失，用 workspace 技能清单执行 agent-index 快速重建（约 4 秒）后再继续；
+② /skill-gateway update 做技能库增量索引同步，记录新增/更新/移除摘要；
+③ 中文描述回填：用 stats 找出绑定技能中缺 description_zh 的条目；禁止调用外部翻译 API（本环境静默失效），由你直接为每个缺失技能撰写一句中文描述，写入 desc-zh.json（技能名→中文描述），再用 agent-index --desc-zh-file desc-zh.json 回填，最后 stats 复核中文描述覆盖数；
+④ /skill-gateway doctor 输出技能库体检报告（坏描述/重名/缺触发词）。
+把以上各步关键结论整理成简短运行摘要，须包含：登记表状态、增量同步结果、本次回填的中文描述条数与累计覆盖数、体检硬问题/软建议。

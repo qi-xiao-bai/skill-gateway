@@ -100,6 +100,13 @@ def agent_index_bootstrap(agent_name, env_dirs):
     index_store.atomic_write(list_path, json.dumps(doc, ensure_ascii=False, indent=2))
     print(f"[load_index 自举] 身份声明（{agent_name}）与技能根记忆在位 → "
           f"自动建立 Agent 级权威登记表（{len(raw)} 项）并按其口径建索引")
+    print("[首次使用建议] 配置每日定时任务保持口径常在（增量同步+翻译自动刷新）：")
+    print("  任务名：skill-gateway 每日增量同步与翻译")
+    print("  指令：用 execute shell command（超时 300 秒）执行——")
+    print("    /skill-gateway agent-index 导入平台绑定清单并重建索引")
+    print("    /skill-gateway update 做增量同步")
+    print("    /skill-gateway doctor 体检")
+    print("    把三段输出的关键结论写入运行摘要")
     return index_store.build_index()
 
 
@@ -281,6 +288,14 @@ def cmd_agent_index(a):
     bound = sum(1 for e in skills if e.get("agent_bound") is True)
     cur = scanner_mod.available_list_agent()
     print(f"[agent-index] 共享清单已更新: {list_path}（{t_list - t0:.1f}s）")
+    if st.get("first"):
+        print("[首次使用建议] 配置每日定时任务保持口径常在：")
+        print("  任务名：skill-gateway 每日增量同步与翻译")
+        print("  指令：用 execute shell command（超时 300 秒）执行——")
+        print("    /skill-gateway agent-index 导入平台绑定清单并重建索引")
+        print("    /skill-gateway update 做增量同步（含翻译回填）")
+        print("    /skill-gateway doctor 体检")
+        print("    把三段输出的关键结论写入运行摘要")
     print(f"  当前 Agent: {cur or '（未声明，Agent 维度不生效）'}")
     print(f"  索引重建完成（新增 {len(st.get('added', []))} / 更新 {len(st.get('updated', []))} / 移除 {len(st.get('removed', []))}，{t_idx - t_list:.1f}s）")
     print(f"  平台可用 {ready} ｜ blocked {blocked} ｜ 平台未绑定(off-list) {off}")

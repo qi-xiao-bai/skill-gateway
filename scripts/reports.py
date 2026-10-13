@@ -62,6 +62,7 @@ def stats_text(entries, edges=None, registry_missing=None):
         out.append("  ⚠ 当前为全机扫描兜底口径：未检测到登记表（available_skills.json），")
         out.append("    所有扫到的技能均视为平台可用；如平台有绑定清单，")
         out.append("    运行 agent-index 建立权威口径（导入后此提示消失）。")
+        out.append("    ┗ 建议同时配置每日定时任务（agent-index+update+doctor）保持口径常在。")
     vis_names = {"ready": "平台可用（默认检索口径）", "off-list": "平台未绑定（仅 --all 全量视图）",
                  "blocked": "平台标记不可用（已排除）"}
     for v, c in sorted(cov.get("by_visibility", {}).items()):
