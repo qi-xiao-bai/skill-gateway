@@ -89,13 +89,23 @@ def translate_en_zh(text, timeout=8):
             # 端点偶发把错误文案当译文返回，做一次粗糙防御
             if out and len(out) > 2 and "INVALID" not in out.upper()[:30]:
                 cache[key] = out
+                cache.pop("_endpoint_fail_streak", None)  # 成功一次即清零
                 _save_cache()
                 time.sleep(0.3)  # 免费端点礼貌间隔
                 return out
         except Exception:
             continue
+    # 全部端点失败 → 递增连败计数（供 failure_note 可观测性，翻译行为本身不变——静默降级设计）
+    cache["_endpoint_fail_streak"] = int(cache.get("_endpoint_fail_streak", 0)) + 1
+    _save_cache()
     return ""
 
+
+def failure_note():
+    """端点连续失败时的可观测性提示；正常返回 None。翻译行为本身不变——静默降级设计。"""
+    n = (_load_cache() or {}).get("_endpoint_fail_streak") or 0
+    return (f"翻译端点不可达（连续失败 {n} 次），中文描述请走自产通道：fill_description_zh.py"
+            if n else None)
 
 def translate_missing(entries, time_budget=20.0):
     """给缺中文描述的条目现场翻译并回填（只改内存副本，由调用方落盘到登记表）。

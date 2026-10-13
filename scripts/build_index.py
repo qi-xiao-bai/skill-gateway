@@ -393,6 +393,36 @@ def cmd_update(a):
     broad = True if a.broad else "auto"
     import datetime as _dt
     print(f"[update] 快照 {_dt.datetime.now():%Y-%m-%d %H:%M:%S}：开始增量同步")
+    try:
+        import translate as _tr
+        _note = _tr.failure_note()
+        if _note:
+            print(f"  ⚠ {_note}")
+    except Exception:
+        pass
+    # #5 自愈钩子：权威清单模式预期下登记表缺失 → 尝试从平台清单重导入（best-effort）
+    _avail_p = os.path.join(paths.ROOT, "inputs", "available_skills.json")
+    if not os.path.isfile(_avail_p):
+        _list_p = os.path.join(paths.ROOT, "inputs", "platform_skills.json")
+        if os.path.isfile(_list_p):
+            print("[update] 登记表缺失但平台清单在位 → 走 importer 重导入自愈")
+            try:
+                import importer as _imp
+                import scanner as _sc
+                import json as _json3
+                _raw = _json3.load(open(_list_p, encoding="utf-8"))
+                _items = _raw.get("skills", _raw if isinstance(_raw, list) else [])
+                _doc = _imp.to_available_list(
+                    [_imp.from_item(it) for it in _items if isinstance(it, dict)],
+                    _sc.available_list_agent() or "未知环境",
+                    _sc.available_list_doc() or {"skills": []})
+                index_store.atomic_write(_avail_p, _json3.dumps(
+                    _doc, ensure_ascii=False, indent=2))
+                print(f"[update] 自愈重建登记表成功（{len(_doc.get('skills', []))} 项）")
+            except Exception as _ex:
+                print(f"[update] 自愈重导入失败（已忽略，走增量扫描）: {_ex}", file=sys.stderr)
+        else:
+            print("[update] 登记表与平台清单均缺失——建议跑 agent-index 或导入清单后 update")
     es, st = index_store.update_index(broad)
     # 层 2 翻译进 update（用户确认）：增量发现的新技能也翻中文描述——
     # 同缓存+预算机制，每条成功立即存缓存，超时停止下次续翻

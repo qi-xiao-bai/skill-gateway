@@ -8,7 +8,7 @@ import index_store
 
 BAD_MARKERS = {"", ">", "|", ">-", "|-", ">+", "|+"}
 BIG = 20000          # SKILL.md 超过此大小建议把细节拆到 references/
-SOFT = {"缺触发词", "超大技能"}
+SOFT = {"缺触发词", "超大技能", "缺中文描述"}
 
 
 def _desc_weight(d):
@@ -30,6 +30,9 @@ def diagnose(entries):
                 findings.append(("坏/空描述", e["name"], f"description=「{d[:30]}」"))
             elif not (e.get("triggers") or []):
                 findings.append(("缺触发词", e["name"], "描述里没有可识别的触发词"))
+            elif not ((e.get("description_zh") or "").strip()) and not any(ord(ch) > 0x2E80 for ch in d):
+                findings.append(("缺中文描述", e["name"],
+                                 "英文描述且无 description_zh，中文检索与双语看板覆盖不到"))
             p = index_store.skill_file(e)
             if p:
                 if not os.path.isfile(p):
@@ -50,7 +53,7 @@ def report_text(entries, sample=10):
     hard = [x for x in f if x[0] not in SOFT]
     soft = [x for x in f if x[0] in SOFT]
     lines = [f"# 技能体检（doctor）：{len(entries)} 项（快照 {__import__('datetime').datetime.now():%Y-%m-%d %H:%M:%S}）",
-             f"硬问题 {len(hard)} 条（坏/空描述、路径缺失、重名）｜软建议 {len(soft)} 条（缺触发词、超大技能）"]
+             f"硬问题 {len(hard)} 条（坏/空描述、路径缺失、重名）｜软建议 {len(soft)} 条（缺触发词、超大技能、缺中文描述）"]
     lines.append("\n## 硬问题（建议修）")
     if hard:
         for kind, name, detail in hard:
