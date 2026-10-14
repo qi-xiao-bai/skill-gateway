@@ -822,7 +822,8 @@ def content_search(doc, query, top=10, skill_dirs=None, terms_cache_override=Non
     返回 [(score, chunk_dict, matched_terms), ...]
     fed_from 标记：搜索结果区分"本技能内容"和"关联技能投喂内容"。
     terms 缓存优先取 doc 内嵌的 terms_cache，其次旧版独立文件；可经 terms_cache_override 直接传入。"""
-    q_terms = retrieval.terms(query)
+    # 查询侧停用词过滤：自然问句的虚词 gram 不参与召回（文档侧索引不动）
+    q_terms = retrieval.drop_query_stopwords(retrieval.terms(query))
     if not q_terms:
         return []
 

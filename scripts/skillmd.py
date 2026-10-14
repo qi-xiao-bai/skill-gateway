@@ -183,6 +183,41 @@ def parse_skill_meta(path):
     return meta
 
 
+# 「Use when …」句式的句首功能词（纯语言知识，零技能名）：句式本身不承载触发语义，
+# 剥掉功能词后剩下的名词短语才是
+_UW_STOPWORDS = {
+    "the", "a", "an", "user", "users", "you", "your", "they", "someone",
+    "want", "wants", "need", "needs", "ask", "asks", "asking", "require",
+    "requires", "for", "to", "and", "or", "of", "when", "is", "are",
+    "please", "help", "with", "into",
+}
+
+
+def _split_triggers(s):
+    return [t.strip() for t in re.split(r"[、,，;；/|\s]+", s) if t.strip()]
+
+
+def _use_when_terms(clause):
+    """「Use when …」子句 → 触发词列表：按顿号/逗号/分号拆片（不按空格，英文短语
+    保持完整）、剥句首功能词、限长防整句回灌。此前 (.+) 贪婪吞到行尾再截 80 字符，
+    整句（含后续句子）进触发词参与打分——触发词列表被句子污染（10-14 使用场景
+    实测：antv-g2-chart 吸进「user asks for G2 charts, …」整句，叙事类连中文尾句一起吞）。"""
+    out = []
+    frags = [t.strip() for t in re.split(r"[、,，;；/|]+", clause) if t.strip()]
+    for frag in frags:
+        words = frag.split()
+        while words and words[0].lower().strip(".,;:!?") in _UW_STOPWORDS:
+            words = words[1:]
+        if not words:
+            continue
+        if len(words) > 5:  # 触发词是短语不是句子
+            words = words[:5]
+        term = " ".join(words).strip(".,;:!?")
+        if term:
+            out.append(term)
+    return out
+
+
 def extract_triggers(desc):
     """从描述里解析触发词，供 list / L1 展示与检索加权。
     识别：中文「触发词：」、英文 Triggers: / Use when / TRIGGER when。"""
@@ -191,7 +226,7 @@ def extract_triggers(desc):
     out = []
 
     def _split(s):
-        return [t.strip() for t in re.split(r"[、,，;；/|\s]+", s) if t.strip()]
+        return _split_triggers(s)
 
     m = re.search(r"触发词[：:]\s*(.+)", desc)
     if m:
@@ -201,9 +236,10 @@ def extract_triggers(desc):
         if m2:
             out.extend(_split(m2.group(1)))
     if not out:
-        m3 = re.search(r"(?:TRIGGER when|Use when)[：:]?\s*(.+)", desc, re.I)
+        # 句界截断：只取 Use when 后到第一个句终符为止的子句，绝不吞后续句子
+        m3 = re.search(r"(?:TRIGGER when|Use when)[：:]?\s*([^。.；;！？!?]+)", desc, re.I)
         if m3:
-            out.append(m3.group(1).strip()[:80])
+            out.extend(_use_when_terms(m3.group(1)))
     seen, res = set(), []
     for t in out:
         if t not in seen:

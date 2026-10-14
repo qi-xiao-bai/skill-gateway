@@ -83,6 +83,25 @@ def test_tab_indented_block_scalar():
     assert skillmd.fm_value(fm, "description") == "Tab 缩进行"
 
 
+def test_use_when_clause_not_swallowed_whole():
+    """「Use when …」句式只取句界内子句并剥功能词——此前 (.+) 贪婪吞整句进触发词
+    参与打分（10-14 使用场景实测：antv-g2-chart 吸进「user asks for G2 charts…」
+    整句、叙事类技能连中文尾句一起吞）。"""
+    trigs = skillmd.extract_triggers(
+        "Advanced chart library. Use when user asks for G2 charts, "
+        "bar charts, line charts, and pie charts.")
+    assert trigs == ["G2 charts", "bar charts", "line charts", "pie charts"]
+
+    trigs2 = skillmd.extract_triggers(
+        "Visual tool. Use when users want to create data interpretations. 叙事文本可视化")
+    # 句界截断：中文尾句不得被吞进触发词
+    assert trigs2 == ["create data interpretations"]
+
+    trigs3 = skillmd.extract_triggers(
+        "图表技能。触发词：柱状图、折线图、可视化")
+    assert trigs3 == ["柱状图", "折线图", "可视化"]
+
+
 def test_meta_fallbacks_mirror_parse_skill_md():
     p = _write("---\nname: meta-no-desc\n---\n\n正文首段")
     try:

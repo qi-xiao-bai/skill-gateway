@@ -351,6 +351,36 @@ class TestEdgeWeights:
 
 
 # ── 高风险路径回归测试 ──────────────────────────────────────────────────────
+class TestQueryStopwords:
+    """自然问句停用词过滤（10-14 使用场景实测：「如何重算 Excel 公式」Top3 全靠
+    「如何」二字命中无关代码）。查询侧丢弃虚词 gram；文档侧索引不动。"""
+
+    def test_question_grams_dropped_from_query(self):
+        import retrieval
+        q = retrieval.terms("如何重算 Excel 公式")
+        kept = retrieval.drop_query_stopwords(q)
+        assert "如何" not in kept
+        assert "如何重" not in kept          # 含停用词子串的 gram 一并丢弃
+        assert "重算" in kept and "公式" in kept
+        assert any("excel" in str(x).lower() for x in kept)
+
+    def test_noise_chunk_no_longer_outranks_target(self):
+        chunks = [
+            {"id": 0, "skill": "mail-helper", "file": "SKILL.md", "s": 1, "e": 5,
+             "summary": "如何写邮件 如何跟进 如何礼貌回复"},
+            {"id": 1, "skill": "xlsx", "file": "scripts/recalc.py", "s": 1, "e": 5,
+             "summary": "recalculate formula 重算公式 recalc engine"},
+        ]
+        inv, tc = ci._rebuild_inverted(chunks)
+        doc = {"chunks": chunks, "inverted": inv}
+        results = ci.content_search(doc, "如何重算 Excel 公式",
+                                    terms_cache_override=tc)
+        if results:
+            assert results[0][1]["skill"] == "xlsx"
+            for _s, _c, matched in results:
+                assert "如何" not in matched
+
+
 class TestContentSearchRecall:
     """正文入倒排后搜索召回是否真的提升。"""
 

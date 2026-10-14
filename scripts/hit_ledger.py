@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # hit_ledger.py - 命中率账本：记录检索/编排/采纳事件（jsonl 追加），聚合
-# 能力缺口（零命中 query）、技能命中/采纳榜、僵尸技能报表。
+# 能力缺口（零命中 query）、技能命中/采纳榜、零检索命中技能报表。
 # 账本是旁路：record_event 任何失败静默吞掉，绝不影响检索主流程；
 # SKILL_GATEWAY_LEDGER=0 关闭；output/ 不进交付包（pack 排除），不出本机。
 import json
@@ -77,7 +77,7 @@ def load_events(limit=None):
 
 
 def ledger_report(events, skill_names=None):
-    """聚合报表：能力缺口（零命中 query 按次数）、技能命中榜、采纳榜、僵尸技能
+    """聚合报表：能力缺口（零命中 query 按次数）、技能命中榜、采纳榜、零检索命中技能
     （skill_names 提供索引技能全集时才输出）。"""
     if skill_names is None:
         skill_names = set()
@@ -127,7 +127,13 @@ def ledger_report(events, skill_names=None):
     if skill_names:
         zombie = sorted(skill_names - set(hit_cnt))
         lines.append("")
-        lines.append(f"## 僵尸技能（索引中有、从未被检索命中：{len(zombie)} 个）")
+        lines.append(f"## 零检索命中技能（从未出现在任何检索结果：{len(zombie)} 个）")
         if zombie:
-            lines.append("  " + "、".join(zombie[:20]) + ("…" if len(zombie) > 20 else ""))
+            # ★=曾被直接 detail 采纳：有真实使用但检索从不带出——触发词/描述优先治理
+            ordered = sorted(zombie, key=lambda n: (not adopt_cnt.get(n), n))
+            shown = [f"★{n}" if adopt_cnt.get(n) else n for n in ordered[:20]]
+            lines.append("  " + "、".join(shown) + ("…" if len(zombie) > 20 else ""))
+            n_star = sum(1 for n in zombie if adopt_cnt.get(n))
+            if n_star:
+                lines.append(f"  （★ = 曾被直接采纳 {n_star} 个：检索从不带出它们——触发词/描述优先治理）")
     return "\n".join(lines)

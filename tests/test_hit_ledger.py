@@ -60,8 +60,23 @@ class HitLedgerTests(unittest.TestCase):
 
     def test_4_report_lists_zombie_skills(self):
         text = hit_ledger.ledger_report([], skill_names={"alpha", "beta"})
-        self.assertIn("僵尸技能", text)
+        self.assertIn("零检索命中技能", text)
         self.assertIn("alpha", text)
+
+    def test_4b_adopted_but_never_hit_gets_star(self):
+        """直接 detail 采纳（不经检索）的技能在零检索命中榜标 ★ 并置顶：
+        有真实使用但检索从不带出=触发词弱的治理信号，不再是"僵尸 vs 采纳"的表面矛盾
+        （10-14 使用场景实测：icon-retrieval 同时出现在采纳榜与僵尸榜）。"""
+        hit_ledger.record_event("adopt", "icon-retrieval", [],
+                                {"skill": "icon-retrieval"})
+        text = hit_ledger.ledger_report(
+            hit_ledger.load_events(),
+            skill_names={"zzz-pure", "icon-retrieval"})
+        self.assertIn("★icon-retrieval", text)
+        self.assertIn("zzz-pure", text)
+        # ★ 置顶：采纳过的排在纯零检索技能之前
+        self.assertLess(text.index("★icon-retrieval"), text.index("zzz-pure"))
+        self.assertIn("曾被直接采纳 1 个", text)
 
     def test_5_report_counts_adoptions(self):
         hit_ledger.record_event("adopt", "crm-support", [], {"skill": "crm-support"})

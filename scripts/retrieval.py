@@ -115,6 +115,26 @@ def idf(entries):
     return {t: max(0.1, 1.0 + (N - df[t] + 0.5) / (df[t] + 0.5)) for t in df}
 
 
+# 中文问句/客套虚词（查询侧停用词，纯语言知识零技能名）：自然问句里这些 gram 只带
+# 噪声——正文里遍地都是，内容检索的 IDF 压不住（10-14 使用场景实测：
+# 「如何重算 Excel 公式」Top3 全靠「如何」二字命中无关代码）。
+QUERY_STOPWORDS = (
+    "如何", "怎么", "怎样", "为何", "为什么", "什么", "哪些", "哪里",
+    "帮我", "请问", "一下", "能否", "吗", "我想", "我要", "想要", "需要",
+)
+
+
+def drop_query_stopwords(q_terms):
+    """查询侧停用词过滤：等于停用词、或包含停用词为子串的 gram 一律丢弃。
+    只作用于查询侧——文档侧索引不动，停用词在正文里仍是合法内容。
+    保持输入类型（terms() 返回 set，下游有集合运算）。"""
+    kept = [t for t in q_terms
+            if not any(t == s or s in t for s in QUERY_STOPWORDS)]
+    if isinstance(q_terms, (set, frozenset)):
+        return q_terms.__class__(kept)
+    return kept
+
+
 # 中英概念桥（评标 P3 建议）：中文 query 时同时检索英文描述的同义词——
 # 纯语言知识（周报↔report 是翻译，不是口诀），不硬编码任何技能名。
 # 反向同理：英文 query 也会桥接到中文词，命中 description_zh。

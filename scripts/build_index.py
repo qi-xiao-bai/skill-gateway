@@ -308,7 +308,7 @@ def cmd_agent_index(a):
 
 
 def cmd_ledger(a):
-    """命中率账本报表：能力缺口（零命中 query）、技能命中/采纳榜、僵尸技能。"""
+    """命中率账本报表：能力缺口（零命中 query）、技能命中/采纳榜、零检索命中技能。"""
     events = ledger_mod.load_events(limit=a.limit or None)
     names = {e["name"] for e in index_store.load_index()
              if e["type"] == "skill" and not e.get("excluded")}
@@ -1853,7 +1853,7 @@ COMMANDS = [
     {
         "name": "ledger",
         "usage": "ledger [--limit N]",
-        "help": "命中率账本报表：零命中 query（能力缺口工单）、技能命中/采纳榜、僵尸技能",
+        "help": "命中率账本报表：零命中 query（能力缺口工单）、技能命中/采纳榜、零检索命中技能",
         "handler": "cmd_ledger",
         "args": [
             (("--limit",), {"type": int, "default": 0, "help": "只统计最近 N 条事件（默认全部）"}),
