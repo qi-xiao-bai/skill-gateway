@@ -84,8 +84,16 @@ def _unique_dirname(safe, used):
     return out
 
 
+# 桥接认可的平台清单文件名（白名单）——除此之外的 json 一律不认：
+# available_skills.example.json（演示模板，假技能入镜像=幽灵条目）、
+# platform_connectors.json（连接器登记）、env_skill_roots.json（根记忆）
+# 都不是技能清单，"任意 json"兜底曾把它们当清单导入（10-14 实抓）。
+BRIDGE_LIST_NAMES = ("platform_skills.json", "available_skills.json", "agent_list.json")
+
+
 def default_src():
-    """默认清单来源：环境变量 → <技能根>/inputs/platform_skills.json → inputs/ 下任意 json。"""
+    """默认清单来源：环境变量 → <技能根>/inputs/platform_skills.json → inputs/ 下
+    已知清单名（白名单）。"""
     env = os.getenv("PLATFORM_SKILLS_JSON")
     if env and os.path.isfile(env):
         return env
@@ -94,9 +102,10 @@ def default_src():
     if os.path.isfile(cand):
         return cand
     if os.path.isdir(inputs):
-        for n in sorted(os.listdir(inputs)):
-            if n.lower().endswith(".json"):
-                return os.path.join(inputs, n)
+        for n in BRIDGE_LIST_NAMES:
+            p = os.path.join(inputs, n)
+            if os.path.isfile(p):
+                return p
     return None
 
 

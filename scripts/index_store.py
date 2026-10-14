@@ -313,6 +313,19 @@ def write_edges(edges):
     return True
 
 
+def tag_no_registry_offlist(entries):
+    """无登记表时的统一兜底口径（单一事实源）：磁盘技能一律 off-list/excluded，
+    不做可用推定——防共享库跨污染。index 与 update 首建两条路必须同走这里：
+    各自实现会漂移（10-14 数字员工实抓：update 首建不打标 → 条目默认 ready，
+    同一磁盘状态随"先跑哪个命令"得到两种口径，检索路由随之错）。"""
+    for e in entries:
+        if e.get("type") == "skill" and not e.get("excluded"):
+            e["visibility"] = "off-list"
+            e["excluded"] = True
+            e["exclude_reason"] = ("无登记表：未建立权威口径前不做可用推定（防共享库跨污染）"
+                                   "——运行 agent-index 建立权威口径")
+
+
 def build_index(broad="auto"):
     """全量重建（首次使用 / 想彻底刷新时用）。
     权威清单存在时与 update 同口径走三段合并（清单 ready/blocked + 磁盘 off-list），
@@ -327,12 +340,7 @@ def build_index(broad="auto"):
     # 无登记表不臆造口径（评标第 8 轮实证：平台挂载可能是全局共享库，扫到即
     # ready 会把别人 workspaces 的技能标成"平台可用"——跨污染推荐）。权威 ready
     # 只能来自登记表/自举；无登记表时磁盘条目全部 off-list（仅 --all 审计可见）。
-    for e in entries:
-        if e.get("type") == "skill" and not e.get("excluded"):
-            e["visibility"] = "off-list"
-            e["excluded"] = True
-            e["exclude_reason"] = ("无登记表：未建立权威口径前不做可用推定（防共享库跨污染）"
-                                   "——运行 agent-index 建立权威口径")
+    tag_no_registry_offlist(entries)
     write_index(entries)
     return entries
 
@@ -512,6 +520,9 @@ def update_index(broad="auto", query=None, targeted=False):
 
     if old is None:
         entries = scanner.scan_all(broad)
+        # 与 build_index 同口径（单一事实源）：无登记表一律 off-list，
+        # 不得各自打标——分叉的代价是默认检索混入非绑定技能
+        tag_no_registry_offlist(entries)
         write_index(entries)
         return entries, {
             "first": True,
@@ -854,6 +865,10 @@ def add_skill(target):
         return None, "目录名无效（纯符号装饰的垃圾目录），拒绝入索引"
     if e["name"].lower() in have:
         return e["name"], "已在索引中（跳过）"
+    # 无登记表时与 build/update 首建同口径（单一事实源）：新入条目一律 off-list，
+    # 不得绕过兜底打标混进默认检索
+    if scanner.available_list_entries() is None:
+        tag_no_registry_offlist([e])
     entries.append(e)
     entries.sort(key=lambda x: (x["type"], x["name"].lower()))
     write_index(entries)

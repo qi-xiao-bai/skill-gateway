@@ -373,5 +373,100 @@ class AvailableListTests(unittest.TestCase):
                 os.environ["SKILL_GATEWAY_OUT_DIR"] = old
 
 
+class NoRegistryFallbackConsistencyTests(unittest.TestCase):
+    """无登记表兜底口径 = 单一事实源（10-14 数字员工实抓口径分叉）。
+    index / update 首建 / add 三条路必须同口径：磁盘技能一律 off-list/excluded，
+    绝不因"先跑哪个命令"分叉——update 首建曾不打标，条目默认 ready 混进默认检索
+    （Excel 查询 Top1 错位实录），登记表一丢（沙箱再水合）即静默触发。"""
+
+    def setUp(self):
+        self._old_root = scanner.ROOT
+        scanner.ROOT = tempfile.mkdtemp(prefix="skix-noreg-")
+        self._old_out = os.environ.get("SKILL_GATEWAY_OUT_DIR")
+
+    def tearDown(self):
+        scanner.ROOT = self._old_root
+        if self._old_out is None:
+            os.environ.pop("SKILL_GATEWAY_OUT_DIR", None)
+        else:
+            os.environ["SKILL_GATEWAY_OUT_DIR"] = self._old_out
+
+    @staticmethod
+    def _skill_pairs():
+        disk = tempfile.mkdtemp(prefix="skix-noregdisk-")
+        pairs = []
+        for nm in ("alpha-tool", "beta-tool"):
+            d = os.path.join(disk, nm)
+            os.makedirs(d)
+            with open(os.path.join(d, "SKILL.md"), "w", encoding="utf-8") as f:
+                f.write(f"---\nname: {nm}\ndescription: disk {nm} 磁盘\n---\nbody")
+            pairs.append(("disk-root", os.path.join(d, "SKILL.md")))
+        return disk, pairs
+
+    @staticmethod
+    def _assert_all_offlist(tag, es):
+        skills = [e for e in es if e["type"] == "skill"]
+        assert skills, f"{tag}: 没扫到技能"
+        for e in skills:
+            assert e.get("visibility") == "off-list", f"{tag}: {e['name']} 应 off-list"
+            assert e.get("excluded"), f"{tag}: {e['name']} 应 excluded"
+
+    def test_build_update_add_share_offlist_fallback(self):
+        disk, pairs = self._skill_pairs()
+        self.assertIsNone(scanner.available_list_entries())  # 登记表不在位
+        with mock.patch.object(scanner, "enumerate_skill_md", return_value=pairs), \
+             mock.patch.object(scanner, "scan_mcp", return_value=[]):
+            out1 = tempfile.mkdtemp(prefix="skix-no1-")
+            os.environ["SKILL_GATEWAY_OUT_DIR"] = out1
+            self._assert_all_offlist("build_index", index_store.build_index())
+
+            out2 = tempfile.mkdtemp(prefix="skix-no2-")
+            os.environ["SKILL_GATEWAY_OUT_DIR"] = out2
+            es_upd, st = index_store.update_index()
+            self.assertTrue(st.get("first"))
+            self._assert_all_offlist("update_index", es_upd)
+
+            # add：无登记表时新入条目同口径，不得绕过兜底打标
+            gd = os.path.join(disk, "gamma-tool")
+            os.makedirs(gd)
+            with open(os.path.join(gd, "SKILL.md"), "w", encoding="utf-8") as f:
+                f.write("---\nname: gamma-tool\ndescription: disk gamma 加测\n---\nbody")
+            name, msg = index_store.add_skill(gd)
+            self.assertEqual(name, "gamma-tool")
+            self.assertIn("已加入", msg)
+            gamma = next(e for e in index_store.read_index()
+                         if e["name"] == "gamma-tool")
+            self.assertEqual(gamma.get("visibility"), "off-list")
+            self.assertTrue(gamma.get("excluded"))
+
+
+class BridgeListWhitelistTests(unittest.TestCase):
+    """桥接清单发现只认白名单文件名：example 模板 / connectors / roots 一律不认。
+    10-14 实抓：自愈把 available_skills.example.json（演示模板，2 个假技能）当真清单
+    导入并落镜像占位——幽灵条目级别隐患；"inputs/ 下任意 json"兜底必须废除。"""
+
+    def test_default_src_whitelist_only(self):
+        import platform_bridge as pb
+        td = tempfile.mkdtemp(prefix="skix-pb-")
+        inputs = os.path.join(td, "inputs")
+        os.makedirs(inputs)
+        for n in ("available_skills.example.json", "platform_connectors.json",
+                  "env_skill_roots.json"):
+            with open(os.path.join(inputs, n), "w", encoding="utf-8") as f:
+                f.write("{}")
+        with mock.patch.object(pb, "ROOT", td), \
+             mock.patch.dict(os.environ, {"PLATFORM_SKILLS_JSON": ""}):
+            self.assertIsNone(pb.default_src())
+            # 白名单命中：available_skills.json 可作清单来源
+            with open(os.path.join(inputs, "available_skills.json"), "w", encoding="utf-8") as f:
+                f.write('{"skills": []}')
+            src = pb.default_src()
+            self.assertTrue(src and src.endswith("available_skills.json"))
+            # platform_skills.json 优先级不变（仍高于其他白名单名）
+            with open(os.path.join(inputs, "platform_skills.json"), "w", encoding="utf-8") as f:
+                f.write('{"skills": []}')
+            self.assertTrue(pb.default_src().endswith("platform_skills.json"))
+
+
 if __name__ == "__main__":
     unittest.main()
