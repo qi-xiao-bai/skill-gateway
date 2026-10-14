@@ -26,6 +26,27 @@ def _cache_path():
     return out_path(".translate-cache.json")
 
 
+# 端点熔断（断路器三态）：按端点记连败次数，连败达阈值即跳过——本轮进程内直接跳过、
+# 持久化到缓存（下轮开头也跳过）；熔断 BREAK_TTL 后自动半开（放行试探一次，
+# 成功清零恢复、失败续熔断）。只跳过不恢复是死锁设计：网络恢复后端点永远
+# 不会再被尝试。此前只有全链级 "_endpoint_fail_streak" 用于提示、从不跳过：
+# 平台实测首个端点不可达时，每条翻译先烧 8 秒超时才轮到可用端点，20 秒预算
+# 一轮只翻 2-3 条（description_zh 覆盖率 ~20% 的根因，10-14 使用场景实测）。
+BREAK_AFTER = 2
+BREAK_TTL = 600.0  # 熔断 10 分钟后半开试探
+
+
+def _breaker_state(cache, tpl):
+    """端点连败次数（未熔断/已过期半开 → 0）。"""
+    d = cache.get("_endpoint_fails")
+    v = d.get(tpl) if isinstance(d, dict) else None
+    if not isinstance(v, dict):
+        return 0
+    if time.time() - float(v.get("t", 0)) >= BREAK_TTL:
+        return 0
+    return int(v.get("n", 0))
+
+
 def _load_cache():
     global _CACHE
     if _CACHE is not None:
@@ -79,23 +100,34 @@ def translate_en_zh(text, timeout=8):
     cache = _load_cache()
     if key in cache:
         return cache[key]
+    fails = cache.get("_endpoint_fails")
+    if not isinstance(fails, dict):
+        fails = {}
     for tpl in _endpoints():
+        if _breaker_state(cache, tpl) >= BREAK_AFTER:
+            continue  # 熔断中：跳过，不再烧超时等待（TTL 过期自动半开试探）
         try:
             url = tpl.replace("{q}", urllib.parse.quote(key))
             req = urllib.request.Request(url, headers={"User-Agent": "skill-gateway/1.0"})
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = json.loads(resp.read().decode("utf-8", "replace"))
             out = _parse(tpl, data)
-            # 端点偶发把错误文案当译文返回，做一次粗糙防御
+            # 端点偶发把错误文案当译文返回，做一次粗糙防御（配额文案也算该端点失败）
             if out and len(out) > 2 and "INVALID" not in out.upper()[:30]:
                 cache[key] = out
-                cache.pop("_endpoint_fail_streak", None)  # 成功一次即清零
+                if tpl in fails:  # 端点成功一次即恢复（半开→闭合）
+                    fails.pop(tpl)
+                    cache["_endpoint_fails"] = fails
+                cache.pop("_endpoint_fail_streak", None)
                 _save_cache()
                 time.sleep(0.3)  # 免费端点礼貌间隔
                 return out
+            fails[tpl] = {"n": _breaker_state(cache, tpl) + 1, "t": time.time()}
         except Exception:
-            continue
-    # 全部端点失败 → 递增连败计数（供 failure_note 可观测性，翻译行为本身不变——静默降级设计）
+            fails[tpl] = {"n": _breaker_state(cache, tpl) + 1, "t": time.time()}
+        cache["_endpoint_fails"] = fails
+        _save_cache()
+    # 全部端点失败/熔断 → 递增连败计数（供 failure_note 可观测性，翻译行为本身不变——静默降级设计）
     cache["_endpoint_fail_streak"] = int(cache.get("_endpoint_fail_streak", 0)) + 1
     _save_cache()
     return ""
@@ -103,9 +135,18 @@ def translate_en_zh(text, timeout=8):
 
 def failure_note():
     """端点连续失败时的可观测性提示；正常返回 None。翻译行为本身不变——静默降级设计。"""
-    n = (_load_cache() or {}).get("_endpoint_fail_streak") or 0
-    return (f"翻译端点不可达（连续失败 {n} 次），中文描述请走自产通道：fill_description_zh.py"
-            if n else None)
+    cache = _load_cache() or {}
+    n = cache.get("_endpoint_fail_streak") or 0
+    dead = [t for t in _endpoints()
+            if _breaker_state(cache, t) >= BREAK_AFTER]
+    if not n and not dead:
+        return None
+    parts = []
+    if n:
+        parts.append(f"连续失败 {n} 次")
+    if dead:
+        parts.append(f"已熔断 {len(dead)} 个端点（连败即跳过，10 分钟后半开试探）")
+    return "翻译端点不可达（" + "，".join(parts) + "），中文描述请走自产通道：fill_description_zh.py"
 
 def translate_missing(entries, time_budget=20.0):
     """给缺中文描述的条目现场翻译并回填（只改内存副本，由调用方落盘到登记表）。

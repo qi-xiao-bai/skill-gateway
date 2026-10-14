@@ -373,6 +373,66 @@ class AvailableListTests(unittest.TestCase):
                 os.environ["SKILL_GATEWAY_OUT_DIR"] = old
 
 
+class VariantPromotionIdempotenceTests(unittest.TestCase):
+    """变体提升必须幂等（10-14 平台实抓）：crm-support-snake 首轮提升 ready 后，
+    后续合并不得再计「新增」——旧实现复用表只收 off-list，提升条目每轮被当新磁盘
+    发现重新提升+重复计 added+旧条目被丢弃（同步刷「新增 1」、search/detail 间歇
+    未找到、API 翻译随丢随重翻）。基座绑定撤销时必须回落 off-list 并计 updated。"""
+
+    def setUp(self):
+        self._old_root = scanner.ROOT
+        scanner.ROOT = tempfile.mkdtemp(prefix="skix-variant-")
+
+    def tearDown(self):
+        scanner.ROOT = self._old_root
+
+    @staticmethod
+    def _disk_skill():
+        disk = tempfile.mkdtemp(prefix="skix-varisk-")
+        d = os.path.join(disk, "crm-support-snake")
+        os.makedirs(d)
+        with open(os.path.join(d, "SKILL.md"), "w", encoding="utf-8") as f:
+            f.write("---" + chr(10) + "name: crm-support-snake" + chr(10)
+                    + "description: CRM 客户 客户关系 运维 工单 支持 蛇形变体" + chr(10)
+                    + "---" + chr(10) + "body")
+        return [("disk-root", os.path.join(d, "SKILL.md"))]
+
+    def test_promotion_reuse_and_demote(self):
+        _write_list(scanner.ROOT,
+                    '[{"name": "crm-support", "description": "CRM 客户 客户关系 运维 工单 支持"}]')
+        pairs = self._disk_skill()
+        avail = scanner.available_list_entries()
+        with mock.patch.object(scanner, "enumerate_skill_md", return_value=pairs),              mock.patch.object(scanner, "scan_mcp", return_value=[]):
+            # 第一轮：变体被提升 ready + variant_of，计新增
+            ents1, st1 = index_store._update_from_available_list(None, avail)
+            snake1 = next(e for e in ents1 if e["name"] == "crm-support-snake")
+            self.assertEqual(snake1.get("visibility"), "ready")
+            self.assertEqual(snake1.get("variant_of"), "crm-support")
+            self.assertIn("crm-support-snake", st1["added"])
+
+            # 模拟索引层翻译挂载
+            snake1["description_zh"] = "翻译保留检查"
+
+            # 第二轮：幂等复用——不重复计新增，ready/variant_of/翻译都保留
+            ents2, st2 = index_store._update_from_available_list(ents1, avail)
+            self.assertNotIn("crm-support-snake", st2["added"])
+            snake2 = next(e for e in ents2 if e["name"] == "crm-support-snake")
+            self.assertEqual(snake2.get("visibility"), "ready")
+            self.assertEqual(snake2.get("variant_of"), "crm-support")
+            self.assertEqual(snake2.get("description_zh"), "翻译保留检查")
+
+            # 第三轮：基座绑定撤销 → 回落 off-list，计 updated 不计 added
+            _write_list(scanner.ROOT,
+                        '[{"name": "other-bound", "description": "别的能力"}]')
+            avail2 = scanner.available_list_entries()
+            ents3, st3 = index_store._update_from_available_list(ents2, avail2)
+            self.assertNotIn("crm-support-snake", st3["added"])
+            self.assertIn("crm-support-snake", st3["updated"])
+            snake3 = next(e for e in ents3 if e["name"] == "crm-support-snake")
+            self.assertEqual(snake3.get("visibility"), "off-list")
+            self.assertTrue(snake3.get("excluded"))
+
+
 class NoRegistryFallbackConsistencyTests(unittest.TestCase):
     """无登记表兜底口径 = 单一事实源（10-14 数字员工实抓口径分叉）。
     index / update 首建 / add 三条路必须同口径：磁盘技能一律 off-list/excluded，

@@ -27,6 +27,7 @@
 | `audit` | Token 账本**完整明细**：库容量级/单次选型对比/全文单份均值/索引对全库比、最重技能榜 | `--top N` |
 | `bench` | **注入台账与 A/B 实测**：不带参数=网关命令注入量台账（实测累计）；`bench <基线Σtoken> <网关Σtoken>`=会话差值——跑法：同一任务先不调用网关跑一遍、再调用网关跑一遍，两遍会话 Σtoken 从平台会话看板取值 | `<基线Σtoken> <网关Σtoken>` |
 | `bundle` | 生成 L0/L1/L2 分片 + 关系图 + `boot.md` | — |
+| `translate` | **批量翻译缺中文描述的技能**（API 现场翻，回写登记表；质量首选=fill_description_zh.py；端点熔断：连败即跳过、10 分钟后半开试探） | `--budget N` |
 | `doctor` | 技能体检：坏/空描述、缺触发词、超大技能、重名、路径缺失、图谱连通性 | `--graph` `--fix` |
 | `export` | 多格式导出（`minjson` 含关系边） | `minjson\|md\|csv\|txt` |
 | `catalog` | 生成可阅读的 `catalog.md` | — |
@@ -55,6 +56,7 @@
 | 生成上传包 / 打包 / boot | `bundle` |
 | Token 对比（单次选型/累计实测） | `stats` / `audit` / `bench`（A/B 会话差值） |
 | 体检技能质量 | `doctor` |
+| 缺中文描述 / 批量翻译 | `translate`（API 兜底）或 `fill_description_zh.py`（质量首选） |
 | 导出 csv / json / markdown | `export <minjson\|md\|csv\|txt>` |
 | 统计 / 来源分布 / 覆盖了哪些 | `stats` |
 | 总览 / 生成文档 | `catalog` |

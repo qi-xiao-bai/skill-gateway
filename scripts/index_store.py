@@ -687,9 +687,15 @@ def _update_from_available_list(old, avail):
 
     # ③ 清单外的磁盘发现：入索引但标记 off-list（清单同名优先，不入默认检索口径）。
     # mtime 增量：未变的直接复用旧条目不重读文件——自愈/重复 update 时这段是隐藏大头。
+    # 复用表必须同时收「已提升的变体」（ready+variant_of）：只收 off-list 会让变体
+    # 每轮被当新磁盘发现重新提升、重复计"新增"且旧条目被丢弃（10-14 平台实测：
+    # crm-support-snake 每次同步「新增 1」、search/detail 间歇未找到、翻译随丢随重翻）。
     old_off = {e["name"].lower() for e in (old or []) if e.get("visibility") == "off-list"}
+    old_variants = {e["name"].lower(): e for e in (old or [])
+                    if e.get("variant_of") and e.get("path")}
     old_off_by_path = {e.get("path"): e for e in (old or [])
-                       if e.get("visibility") == "off-list" and e.get("path")}
+                       if (e.get("visibility") == "off-list" or e.get("variant_of"))
+                       and e.get("path")}
     new_off, seen_off, converted = [], set(), set()
     for root, sk in scanner.enumerate_skill_md("auto"):
         skill_dir = os.path.dirname(sk)
@@ -739,7 +745,9 @@ def _update_from_available_list(old, avail):
             e["variant_of"] = base
             e.pop("excluded", None)
             e.pop("exclude_reason", None)
-            if low in old_off:
+            if low in old_variants:
+                pass  # 上一轮已提升：幂等复用，不重复计"新增"
+            elif low in old_off:
                 updated.append(e["name"])
             else:
                 added.append(e["name"])
@@ -752,11 +760,14 @@ def _update_from_available_list(old, avail):
         e["visibility"] = "off-list"
         e["excluded"] = True
         e["exclude_reason"] = "平台未绑定（不在权威可用清单，仅 --all 全量视图可见）"
-        if low not in old_off:
+        if low in old_variants:
+            updated.append(low)  # 提升变体回落 off-list（基座绑定撤了）
+        elif low not in old_off:
             added.append(low)
         new_off.append(low)
         out.append(e)
     removed |= (old_off - set(new_off)) - converted  # 转 ready 的变体不算移除
+    removed |= set(old_variants) - set(seen_off)    # 提升变体从磁盘消失 → 真移除
 
     mcp = scanner.scan_mcp()
     old_mcp = {e["name"] for e in (old or []) if e.get("type") == "mcp"}

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # build_index.py - skill-gateway CLI 入口（子命令分发）
 # 子命令: index / update / add / roots / import / list / search / explain / detail / related
-#         / stats / audit / bench / bundle / doctor / export / route / catalog / help
+#         / stats / audit / bench / translate / bundle / doctor / export / route / catalog / help
 # created 2026-09-09, updated 2026-09-16 qjl: 拆分为多模块(scripts/) + 新增 doctor / export
 # updated 2026-09-16 qjl: 新增 roots(扫描根探针) / import(导入外部技能清单)
 import argparse
@@ -390,6 +390,69 @@ def cmd_import(a):
     print(f"  更新 {len(updated)}: {'、'.join(updated[:20]) or '无'}")
 
 
+def _translate_ready_entries(es, budget=20.0, tag="update"):
+    """API 现场翻译缺中文描述的 ready 技能并回写登记表（update/translate 子命令共用）。
+    翻译只改内存副本，登记表是持久层；端点熔断见 translate.py。绝不让异常冒泡——
+    翻译是增强能力，不阻断调用方主流程。"""
+    import translate as _tr
+    import scanner as _sc
+    import paths as _paths
+
+    _miss = [e for e in es if e.get("type") == "skill"
+             and not e.get("excluded")
+             and (e.get("visibility") == "ready")
+             and e.get("description")
+             and not e.get("description_zh")]
+    if not _miss:
+        return 0, 0, 0
+    _ok, _fail = _tr.translate_missing(_miss, time_budget=float(budget))
+    if _ok:
+        print(f"[{tag}] 翻译回填 {_ok} 条（缓存续翻，剩余下次）")
+        # 写回登记表（只更新翻译过的条目；非登记表条目随索引层复用保留）
+        _avail = _sc.available_list_entries()
+        if _avail is not None:
+            _by = {x["name"].lower(): x for x in _avail}
+            for e in es:
+                if e.get("description_zh") and e["name"].lower() in _by:
+                    _by[e["name"].lower()]["description_zh"] = e["description_zh"]
+            _list = os.path.join(_paths.ROOT, "inputs", "available_skills.json")
+            if os.path.isfile(_list):
+                import json as _json2
+                _doc = _json2.load(open(_list, encoding="utf-8"))
+                for _it in _doc.get("skills", []):
+                    _k = _it.get("name", "").lower()
+                    if _k in _by and _by[_k].get("description_zh"):
+                        _it["description_zh"] = _by[_k]["description_zh"]
+                index_store.atomic_write(_list, _json2.dumps(
+                    _doc, ensure_ascii=False, indent=2))
+    return _ok, _fail, len(_miss) - _ok
+
+
+def cmd_translate(a):
+    """专门翻译缺中文描述的技能（API 现场翻译，回写登记表）。
+    --budget 默认 20 秒（平台 30s 限制防御）；本地环境可放大（如 --budget 300）。"""
+    es = index_store.load_index()
+    _n_all = sum(1 for e in es if e.get("type") == "skill"
+                 and e.get("visibility") == "ready"
+                 and e.get("description")
+                 and not e.get("description_zh"))
+    if not _n_all:
+        print("[translate] 无待翻译条目：ready 技能全部已有中文描述")
+        return
+    budget = float(getattr(a, "budget", 20.0) or 20.0)
+    print(f"[translate] 待翻译 {_n_all} 条（预算 {budget:.0f}s，缓存续翻，端点熔断已启用）")
+    _ok, _fail, _remain = _translate_ready_entries(es, budget=budget, tag="translate")
+    print(f"[translate] 本轮回填 {_ok} 条 / 失败 {_fail} 条 / 剩余 {_remain} 条")
+    if _remain:
+        print("[translate] 剩余条目再跑一次续翻（已翻译条目走缓存零成本）")
+    import translate as _tr
+    _note = _tr.failure_note()
+    if _note:
+        print(f"[translate] {_note}")
+    print("[translate] 高质量通道：python scripts/fill_description_zh.py --export todo.json"
+          " → LLM 译 → 回填（API 翻译是兜底）")
+
+
 def cmd_update(a):
     broad = True if a.broad else "auto"
     import datetime as _dt
@@ -428,35 +491,7 @@ def cmd_update(a):
     # 层 2 翻译进 update（用户确认）：增量发现的新技能也翻中文描述——
     # 同缓存+预算机制，每条成功立即存缓存，超时停止下次续翻
     try:
-        import translate as _tr
-        _miss = [e for e in es if e.get("type") == "skill"
-                 and not e.get("excluded")
-                 and (e.get("visibility") == "ready")
-                 and e.get("description")
-                 and not e.get("description_zh")]
-        if _miss:
-            _ok, _fail = _tr.translate_missing(_miss, time_budget=20.0)
-            if _ok:
-                print(f"[update] 翻译回填 {_ok} 条（缓存续翻，剩余下次）")
-                # 写回登记表（只更新翻译过的条目）
-                import scanner as _sc
-                _avail = _sc.available_list_entries()
-                if _avail is not None:
-                    _by = {x["name"].lower(): x for x in _avail}
-                    for e in es:
-                        if e.get("description_zh") and e["name"].lower() in _by:
-                            _by[e["name"].lower()]["description_zh"] = e["description_zh"]
-                    import paths as _paths
-                    _list = os.path.join(_paths.ROOT, "inputs", "available_skills.json")
-                    if os.path.isfile(_list):
-                        import json as _json2
-                        _doc = _json2.load(open(_list, encoding="utf-8"))
-                        for _it in _doc.get("skills", []):
-                            _k = _it.get("name", "").lower()
-                            if _k in _by and _by[_k].get("description_zh"):
-                                _it["description_zh"] = _by[_k]["description_zh"]
-                        index_store.atomic_write(_list, _json2.dumps(
-                            _doc, ensure_ascii=False, indent=2))
+        _translate_ready_entries(es, budget=20.0, tag="update")
     except Exception as _ex:
         print(f"[update] 翻译通道（不影响索引）: {_ex}", file=sys.stderr)
     full = bool(a.full)
@@ -1689,6 +1724,13 @@ COMMANDS = [
         "handler": "cmd_bench",
         "args": [(("baseline",), {"type": int, "nargs": "?"}),
                  (("gateway",), {"type": int, "nargs": "?"})],
+    },
+    {
+        "name": "translate",
+        "usage": "translate [--budget N]",
+        "help": "专门翻译缺中文描述的技能（API 现场翻，回写登记表；--budget 秒数默认 20）",
+        "handler": "cmd_translate",
+        "args": [(("--budget",), {"type": float, "default": 20.0})],
     },
     {
         "name": "bundle",

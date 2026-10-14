@@ -76,10 +76,10 @@ pipeline 处理开发任务时按开发生命周期检索编排。**契约只定
 - **验证规范**：建索引后的核对用 `list --agent`（list 不产生检索脚注）；如需 `search` 验证，答复中必须注明"脚注来自验证检索，非调度交付"——验证脚注混进交付答复会造成"建索引命中了技能"的错觉。
 - 兼容入口：`skill_profile.json` 的 `authoritative_skills`
 
-- **中文描述回填首选路径（本环境翻译 API 不可用时的标准做法）**：`fill_description_zh.py`
-  两步走——`--export todo.json` 导出待译清单 → 由 LLM 直接把每项 description 译成
-  description_zh（保持 key 不变）→ `fill_description_zh.py todo.json` 回填。无磁盘副本的
-  import 条目改走登记表通道：`agent-index --desc-zh-file <json>`。禁止依赖外部翻译 API。（仅名字数组）在没有 `available_skills.json` 时自动充当清单来源；要 agents/category/platform 完整口径仍用 `agent-index` 生成。磁盘上与绑定技能**业务重叠**的变体（描述/触发词真实重叠达图谱 overlap 阈值，名字前缀仅作线索）保持可用。
+- **中文描述回填——双通道**：
+  - 质量首选（离线可用）：`fill_description_zh.py` 两步走——`--export todo.json` 导出待译清单 → 由 LLM 直接把每项 description 译成 description_zh（保持 key 不变）→ `fill_description_zh.py todo.json` 回填。无磁盘副本的 import 条目改走登记表通道：`agent-index --desc-zh-file <json>`。
+  - API 兜底（增强能力，离线静默降级，禁止当依赖）：`translate [--budget N]` 批量现场翻译缺中文描述的技能并回写登记表——预算默认 20s（平台 30s 限制防御），已翻译条目走缓存零成本续翻；端点熔断（连败 2 次即跳过不再烧超时等待，10 分钟后半开试探，成功清零恢复）。
+- **清单来源兼容**：（仅名字数组）在没有 `available_skills.json` 时自动充当清单来源；要 agents/category/platform 完整口径仍用 `agent-index` 生成。磁盘上与绑定技能**业务重叠**的变体（描述/触发词真实重叠达图谱 overlap 阈值，名字前缀仅作线索）保持可用。
 - **Agent 维度（非默认，平台是默认口径）**：多智能体环境**共用同一份清单**——每项的 `agents` 数组标注被哪些智能体绑定（就是"可见性多写几个字"），清单顶层 `current_agent` 或环境变量 `SKILL_GATEWAY_AGENT` 声明当前智能体，条目据此算出 `agent_bound`。加 `--agent` 才收窄；不加 = 平台口径。`agent-index` 导入是**合并**语义：agents 取并集、未导入条目原样保留，绝不裁剪其他环境的绑定。
 
 ### 建立 Agent 级索引（网页端三步，一条命令）
@@ -156,6 +156,7 @@ skill-gateway/
 | 搜代码 | `content-find` |
 | Token 对比（单次选型 / 累计实测） | `stats`（单次选型对比）/ `bench`（注入台账 + A/B 会话对比）/ `audit`（完整明细+最重技能） |
 | 体检 | `doctor` |
+| 缺中文描述 / 批量翻译 | `translate`（API 兜底）/ `fill_description_zh.py`（质量首选） |
 
 > 完整映射见 [`references/commands.md`](references/commands.md#意图路由话术--命令)。
 
