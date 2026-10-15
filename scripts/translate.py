@@ -166,10 +166,15 @@ def translate_missing(entries, time_budget=20.0):
                   f"（已翻 {ok} / 失败 {fail} / 剩余 {len(entries) - ok - fail}）")
             break
         zh = translate_en_zh(it["description"])
-        if zh:
+        if not zh:
+            fail += 1
+        elif zh == it["description"] and re.search(r"[A-Za-z]{2,}", zh):
+            # 假翻译闸：端点无匹配会把原文直返（此流程里中文直通已在上一行被拦，
+            # 译文=原文只可能是直返）——绝不让英文原文冒充中文描述入库，
+            # 计失败留给 fill_description_zh.py 质量通道（10-14 用户实抓"翻译包含英文"）
+            fail += 1
+        else:
             it["description_zh"] = zh
             ok += 1
             _save_cache()  # 每条成功即存缓存——被杀也不丢已翻内容
-        else:
-            fail += 1
     return ok, fail

@@ -169,6 +169,36 @@ class TranslateTests(unittest.TestCase):
         self.assertEqual(entries[2]["description_zh"], "已有")  # 已有不覆盖
 
 
+    def test_no_match_original_return_blocked(self):
+        """假翻译闸：端点无匹配把原文直返时，不得让英文原文冒充中文描述入库
+        （10-14 用户实抓"翻译包含英文"的根因）；真译文正常入库。"""
+        entries = [
+            {"name": "fake", "description": "Send periodic reminders to chat groups"},
+            {"name": "real", "description": "Create and edit spreadsheet formulas"},
+        ]
+        seen = set()
+
+        def fake_translate(text, timeout=8):
+            seen.add(text)
+            if "reminders" in text:
+                return text  # 端点无匹配 → 原文直返
+            return "创建并编辑电子表格公式"  # 正常译文
+
+        with mock.patch.object(translate, "translate_en_zh",
+                               side_effect=fake_translate):
+            ok, fail = translate.translate_missing(entries)
+        self.assertEqual(ok, 1)
+        self.assertEqual(fail, 1)
+        self.assertNotIn("description_zh", entries[0])   # 直返原文被拦截
+        self.assertEqual(entries[1]["description_zh"], "创建并编辑电子表格公式")
+        # 保留专有名词的正常译文（≠原文）不受闸影响
+        entries2 = [{"name": "cron-keep", "description": "Schedule cron jobs"}]
+        with mock.patch.object(translate, "translate_en_zh",
+                               return_value="安排cron作业"):
+            ok2, _ = translate.translate_missing(entries2)
+        self.assertEqual(ok2, 1)
+        self.assertEqual(entries2[0]["description_zh"], "安排cron作业")
+
     def test_translate_ready_entries_helper(self):
         """共享回填 helper（update/translate 子命令同源）：缺译 ready 条目被填、
         已有中文与 off-list 不动；无登记表环境零写盘（持久层=登记表，本用例隔离）。"""

@@ -255,7 +255,8 @@ def cmd_agent_index(a):
             _ok, _fail = _tr.translate_missing(_need_zh, time_budget=20.0)
             if _ok:
                 print(f"[agent-index] 翻译 API 现场回填中文描述 {_ok} 条"
-                      + (f"（{_fail} 条失败，下次重试）" if _fail else ""))
+                      + (f"（{_fail} 条未完成，下次续翻或走 fill_description_zh.py）"
+                         if _fail else ""))
                 index_store.atomic_write(list_path, json.dumps(doc, ensure_ascii=False, indent=2))  # 翻译完的写回
             elif _fail:
                 print(f"[agent-index] 翻译 API 不可达/失败 {_fail} 条（登记表保持原文，下次重试）")
