@@ -252,7 +252,7 @@ class MetaConsistencyTests(unittest.TestCase):
         # PROFILE_FILE 不受 OUT_DIR 管（真实画像在技能根）——测试必须备份还原，
         # 否则晋升写盘会污染真机画像（首轮就实抓了这个坑）
         prof_path = _paths.PROFILE_FILE
-        _backup = Path(prof_path, encoding="utf-8").read_text() if _os.path.isfile(prof_path) else None
+        _backup = Path(prof_path).read_text(encoding="utf-8") if _os.path.isfile(prof_path) else None
         try:
             _paths._PROFILE_CACHE["key"] = None
             _pro.index_store.atomic_write(
@@ -266,9 +266,9 @@ class MetaConsistencyTests(unittest.TestCase):
             mem = _os.path.join(_tmp, "memory.md")
             corr = _os.path.join(_tmp, "corrections.md")
             self.assertTrue(_os.path.isfile(mem), "晋升后 memory.md 必须同步")
-            self.assertIn("hot-skill", Path(mem, encoding="utf-8").read_text())
+            self.assertIn("hot-skill", Path(mem).read_text(encoding="utf-8"))
             self.assertTrue(_os.path.isfile(corr), "晋升是画像变更，必须记纠偏审计")
-            self.assertIn("自动进化", Path(corr, encoding="utf-8").read_text())
+            self.assertIn("自动进化", Path(corr).read_text(encoding="utf-8"))
         finally:
             _os.environ.pop("SKILL_GATEWAY_OUT_DIR", None)
             _paths._PROFILE_CACHE["key"] = None
@@ -294,7 +294,7 @@ class MetaConsistencyTests(unittest.TestCase):
         """⑧ 归属判定必须统一走 _platOf()——inspector chips 和节点过滤不得内联归属逻辑。"""
         import re as _re
         tpl = os.path.join(SCRIPTS, "..", "templates", "dashboard_template.html")
-        src = Path(tpl, encoding="utf-8").read_text()
+        src = Path(tpl).read_text(encoding="utf-8")
         # _platOf 必须存在（归属判定唯一真源）
         self.assertIn("function _platOf", src, "_platOf 必须存在")
         # _platOf 必须包含 variant_of 继承链
