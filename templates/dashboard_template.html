@@ -1915,6 +1915,11 @@ document.getElementById("btnToggleSim").addEventListener("click", function() {
 function setTypeFilter(f) {
   document.querySelectorAll(".filter-btn").forEach(b => b.classList.toggle("active", b.getAttribute("data-filter") === f));
   currentFilter = f;
+  // 片子口径优先：点「已排除」=要看排除项（勾上开关）；点 全部/技能/MCP/连接器
+  // =回可见口径（强制熄掉开关）——设置面板里的开关曾静默覆盖片状态，
+  // 用户点"全部"仍见已排除项（10-19 实抓）；片状态与实际过滤必须一致
+  var _tgx = document.getElementById("toggleExcluded");
+  if (_tgx) _tgx.checked = (f === "excluded");
   // 平台筛选在新口径下无归属节点时自动清除，避免叠加出空视图
   if (currentPlat && f !== "excluded" && f !== "all") {
     const ok = n => !n.excluded && nodeTypeMatches(n, f) &&
