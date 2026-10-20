@@ -855,7 +855,6 @@
       <button class="filter-btn has-menu" data-filter="skill" data-i18n="filter_skill">技能</button>
       <button class="filter-btn has-menu" data-filter="mcp" data-i18n="filter_mcp">MCP</button>
       <button class="filter-btn has-menu" data-filter="connector" data-i18n="filter_connector">连接器</button>
-      <button class="filter-btn" data-filter="excluded" data-i18n="filter_excluded">已排除</button>
       <button class="filter-btn" id="clearPlatBtn" style="display:none" onclick="setPlatFilter(null)" title="清除平台/Agent 筛选 / Clear platform filter">✕</button>
     </div>
 
@@ -964,12 +963,6 @@
     </div>
     <div class="legend-toggles">
       <label class="legend-toggle-label">
-        <input type="checkbox" id="toggleExcluded">
-        <!-- 默认不显示排除技能：索引口径=平台可用；要看全量再勾 -->
-
-        <span data-i18n="opt_show_excluded">显示已排除技能</span>
-      </label>
-      <label class="legend-toggle-label">
         <input type="checkbox" id="toggleLabels" checked>
         <span data-i18n="opt_show_labels">显示节点文字标签</span>
       </label>
@@ -1011,7 +1004,6 @@ const I18N = {
     filter_skill: "技能",
     filter_mcp: "MCP",
     filter_connector: "连接器",
-    filter_excluded: "已排除",
     lang_btn: "English",
     
     empty_title: "技能拓扑档案",
@@ -1057,7 +1049,6 @@ const I18N = {
     legend_title: "图例与筛选",
     legend_nodes: "节点类型",
     legend_edges: "关系边类型 (悬浮查看详情)",
-    opt_show_excluded: "显示已排除技能",
     opt_show_labels: "显示节点文字标签",
     
     edge_depends_on: "依赖前置 (depends_on)",
@@ -1083,7 +1074,6 @@ const I18N = {
     filter_skill: "Skills",
     filter_mcp: "MCP",
     filter_connector: "Connectors",
-    filter_excluded: "Excluded",
     lang_btn: "中文",
     
     empty_title: "Skill Node Inspector",
@@ -1129,7 +1119,6 @@ const I18N = {
     legend_title: "Legend & Options",
     legend_nodes: "Node Types",
     legend_edges: "Relation Types (Hover for details)",
-    opt_show_excluded: "Show Excluded Skills",
     opt_show_labels: "Show Node Labels",
     
     edge_depends_on: "Depends On (depends_on)",
@@ -1771,48 +1760,40 @@ function nodeViewType(n) {
 }
 function nodeTypeMatches(n, key) { return key === "all" ? true : nodeViewType(n) === key; }
 function platLabel(v) { return v === "__unlabeled__" ? t("plat_unlabeled") : v; }
-// 节点是否被当前口径隐藏（节点显示与空视图计数共用同一判定，避免两处口径漂移）
-function nodeHiddenByFilter(d, showExcluded) {
-  if (currentFilter === "excluded") return !d.excluded; // 已排除口径是显式审计意图，不受"显示已排除"开关限制
-  if (d.excluded && !showExcluded) return true;
+// 节点是否被当前口径隐藏（节点显示与空视图计数共用同一判定，避免两处口径漂移）。
+// 口径语义（10-20 用户定稿）：全部=字面全量——已排除节点不隐藏，靠虚线/降透明度样式区分；
+// 技能/MCP/连接器片只按类型过滤，不再有"已排除"专门视图
+function nodeHiddenByFilter(d) {
   if (currentFilter !== "all" && !nodeTypeMatches(d, currentFilter)) return true;
-  if (currentPlat && currentFilter !== "excluded" && currentFilter !== "all" && nodeTypeMatches(d, currentFilter)) {
+  if (currentPlat && currentFilter !== "all") {
     if (currentPlat.type === "platform" && _platOf(d) !== platLabel(currentPlat.value)) return true;
     if (currentPlat.type === "agent" && !(d.agents || []).includes(currentPlat.value)) return true;
   }
   return false;
 }
 function applyCategoryFilter() {
-  const showExcluded = document.getElementById("toggleExcluded").checked;
   const q = document.getElementById("searchInput").value.trim().toLowerCase();
 
-  nodeElements.style("display", d => nodeHiddenByFilter(d, showExcluded) ? "none" : "");
+  nodeElements.style("display", d => nodeHiddenByFilter(d) ? "none" : "");
 
   linkElements.style("display", d => {
     const sNode = d.source.id ? d.source : nodeMap.get(d.source);
     const tNode = d.target.id ? d.target : nodeMap.get(d.target);
-    const sEx = sNode ? sNode.excluded : false;
-    const tEx = tNode ? tNode.excluded : false;
-    if (currentFilter === "excluded") {
-      if (!sEx && !tEx) return "none"; // 已排除口径：两端至少一端被排除
-    } else {
-      if ((sEx || tEx) && !showExcluded) return "none";
-      if (currentFilter !== "all") {
-        if (!sNode || !tNode || !nodeTypeMatches(sNode, currentFilter) || !nodeTypeMatches(tNode, currentFilter)) return "none";
-        if (currentPlat) {
-          const okEnd = n => n && (currentPlat.type === "platform" ? _platOf(n) === platLabel(currentPlat.value) : (n.agents || []).includes(currentPlat.value));
-          if (!okEnd(sNode) || !okEnd(tNode)) return "none";
-        }
+    if (currentFilter !== "all") {
+      if (!sNode || !tNode || !nodeTypeMatches(sNode, currentFilter) || !nodeTypeMatches(tNode, currentFilter)) return "none";
+      if (currentPlat) {
+        const okEnd = n => n && (currentPlat.type === "platform" ? _platOf(n) === platLabel(currentPlat.value) : (n.agents || []).includes(currentPlat.value));
+        if (!okEnd(sNode) || !okEnd(tNode)) return "none";
       }
     }
     return "";
   });
 
-  // 口径空视图提示（例：当前环境连接器全部处于已排除审计口径）
-  if (!rawNodes.some(n => !nodeHiddenByFilter(n, showExcluded))) {
+  // 口径空视图提示
+  if (!rawNodes.some(n => !nodeHiddenByFilter(n))) {
     showToast(currentLang === "zh"
-      ? "该口径下没有可见条目：试试 ✕ 清除平台筛选，或勾选「显示已排除技能」"
-      : "No visible items here: try ✕ to clear the platform filter, or enable 'Show Excluded Skills'");
+      ? "该口径下没有可见条目：试试 ✕ 清除平台筛选"
+      : "No visible items here: try ✕ to clear the platform filter");
   }
 
   // Apply search query opacity if query exists
@@ -1915,14 +1896,9 @@ document.getElementById("btnToggleSim").addEventListener("click", function() {
 function setTypeFilter(f) {
   document.querySelectorAll(".filter-btn").forEach(b => b.classList.toggle("active", b.getAttribute("data-filter") === f));
   currentFilter = f;
-  // 片子口径优先：点「已排除」=要看排除项（勾上开关）；点 全部/技能/MCP/连接器
-  // =回可见口径（强制熄掉开关）——设置面板里的开关曾静默覆盖片状态，
-  // 用户点"全部"仍见已排除项（10-19 实抓）；片状态与实际过滤必须一致
-  var _tgx = document.getElementById("toggleExcluded");
-  if (_tgx) _tgx.checked = (f === "excluded");
   // 平台筛选在新口径下无归属节点时自动清除，避免叠加出空视图
-  if (currentPlat && f !== "excluded" && f !== "all") {
-    const ok = n => !n.excluded && nodeTypeMatches(n, f) &&
+  if (currentPlat && f !== "all") {
+    const ok = n => nodeTypeMatches(n, f) &&
       (currentPlat.type === "platform" ? _platOf(n) === platLabel(currentPlat.value) : (n.agents || []).includes(currentPlat.value));
     if (!rawNodes.some(ok)) setPlatFilter(null);
   }
@@ -1995,7 +1971,7 @@ function renderPlatMenu(typeKey) {
 
 function showPlatMenu(chip) {
   const typeKey = chip.getAttribute("data-filter");
-  if (!typeKey || ["all", "excluded"].includes(typeKey)) return; // 全部/已排除不挂平台下拉
+  if (!typeKey || typeKey === "all") return; // 全部片不挂平台下拉
   if (platMenuChip === chip && platMenu.classList.contains("show")) return; // 同 chip 已展开，避免重渲染闪烁
   clearTimeout(platMenuHideTimer); platMenuHideTimer = null;
   platMenuChip = chip;
@@ -2063,18 +2039,8 @@ function setPlatFilter(f, viewType) {
 
 // Excluded & Labels Toggles
 
-// 打开面板默认定位到本平台（登记表声明的当前智能体）：默认口径=技能+该平台，
-// chip 激活态与 ✕ 可见性和实际筛选一致，不静默；无身份声明时才是真正的"全部"
+// 默认口径=全部（10-20 用户定稿：打开即全量，已排除节点以虚线样式呈现，不再有隐藏开关）
 setTypeFilter(currentFilter);
-if (currentAgentIdentity) {
-  const _platSet = new Set(rawNodes.filter(n => !n.excluded && n.type === "skill").map(_platOf));
-  if (_platSet.has(currentAgentIdentity)) {
-    setTypeFilter("skill");
-    setPlatFilter({type: "platform", value: currentAgentIdentity});
-  }
-}
-
-document.getElementById("toggleExcluded").addEventListener("change", applyCategoryFilter);
 document.getElementById("toggleLabels").addEventListener("change", function() {
   textElements.style("display", this.checked ? "" : "none");
 });
