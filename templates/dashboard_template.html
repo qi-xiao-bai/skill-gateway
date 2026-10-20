@@ -1796,6 +1796,19 @@ function applyCategoryFilter() {
       : "No visible items here: try ✕ to clear the platform filter");
   }
 
+  // 顶栏统计=当前可见集合的实况计数（10-20 用户定稿：数字跟着筛选动态变，
+  // 不是生成时写死的静态值）——MCP/连接器拆开显示，与服务端初始格式一致
+  const visN = rawNodes.filter(n => !nodeHiddenByFilter(n));
+  const _vs = visN.filter(n => nodeViewType(n) === "skill").length;
+  const _vm = visN.filter(n => nodeViewType(n) === "mcp").length;
+  const _vc = visN.filter(n => nodeViewType(n) === "connector").length;
+  let _vl = 0;
+  linkElements.each(function() { if (this.style.display !== "none") _vl++; });
+  const elS = document.getElementById("stat-skills"); if (elS) elS.textContent = _vs;
+  const elM = document.getElementById("stat-mcps");
+  if (elM) elM.textContent = _vc > 0 ? ("MCP " + _vm + " / 连接器 " + _vc) : ("MCP " + _vm);
+  const elE = document.getElementById("stat-edges"); if (elE) elE.textContent = _vl;
+
   // Apply search query opacity if query exists
   if (q) {
     const matched = new Set();
