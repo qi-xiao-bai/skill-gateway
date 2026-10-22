@@ -1,214 +1,191 @@
-# Skill Gateway（全局技能调度、代理直达与图谱串联编排网关）
+<div align="center">
 
-> **版本**：v4（自建实现，独立开发）
->
-> **测试留痕**：全量测试 138 项全过（pytest 或标准库 `python -m unittest discover -s tests` 均可复跑——评标环境无需装 pytest），原始输出见 `references/TEST-EVIDENCE.md`。
+# ⚡ 点将台 · Skill Gateway
 
-一个**技能资产中枢型元技能（meta-skill）**：把数字员工与 Agent 平台上"上百个孤立技能"变成**可编排、可看见、可治理**的基础设施。
+**面向 AI Coding Agent 的本地技能拓扑编排、毫秒级直达与知识图谱治理中枢**  
+*The Local Skill Intelligence & DAG Orchestration Engine for AI Coding Agents*
 
-- **能力一：多技能智能串联编排（Multi-Skill Pipeline Chaining）**：针对开发完整需求、故障排查等复合任务，基于**知识图谱拓扑边（`depends_on` 依赖、`contains` 包含、`similar` 相似）**做 Kahn 拓扑分层，自动把相关技能编排为端到端**流水线 DAG**。阶段数量与顺序由图谱边决定；查不出依赖关系时输出并行候选（列候选与检索证据，由执行 Agent 甄别采纳）。
-- **能力二：技能资产可视化报表（Visibility & Reporting）**：**关系图谱 dashboard**（节点/关系边/平台→Agent 双口径下钻，单文件离线可用）+ **命中率账本**（ledger：零命中 query 自动转能力缺口工单、技能命中/采纳榜、零检索命中技能盘点）+ **Token 经济审计**（audit：单次选型对比/容量明细，实时实算）+ **注入台账与 A/B 实测**（bench）+ **覆盖口径报表**（stats：平台可用/未绑定/已排除三档与缺口清单）——技能资产现状与治理点一图看全。
-- **能力三：检索打分与代理直达（Scoring & Proxy）**：单点需求经 IDF 加权打分**秒级匹配最佳技能并代理执行**；候选打分并列时列证据交人工确认，零命中自动转能力缺口工单——选型有据、缺口可见。
-- **按需注入与实测台账**：选型只注入 top-K 命中行而非全清单；命令注入量自动记台账（`bench` 查累计），A/B 会话实测差值即提升（同一任务两遍跑法，Σtoken 取自平台会话看板）。
+<p align="center">
+  <a href="https://github.com/qi-xiao-bai/skill-gateway/actions/workflows/ci.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/qi-xiao-bai/skill-gateway/ci.yml?branch=main&style=flat-square&logo=github&label=CI%20Build" alt="CI Status">
+  </a>
+  <a href="https://www.python.org/">
+    <img src="https://img.shields.io/badge/Python-3.10%20%7C%203.13-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python">
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" alt="License">
+  </a>
+  <a href="#">
+    <img src="https://img.shields.io/badge/Dependencies-Zero%20(Pure%20Stdlib)-brightgreen.svg?style=flat-square" alt="Dependencies">
+  </a>
+  <a href="#">
+    <img src="https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg?style=flat-square" alt="Platforms">
+  </a>
+  <a href="#">
+    <img src="https://img.shields.io/badge/Dashboard-100%25%20Offline%20(D3.js)-purple.svg?style=flat-square" alt="Offline Ready">
+  </a>
+</p>
 
-## 目录结构
-```
-skill-gateway/
-├── SKILL.md                      # 技能定义与双模式调度契约
-├── README.md
-├── skill_profile.json            # 用户重要指令与技能画像（固定根/置顶技能/全局必遵指令）
-├── .skillexclude                 # 技能排除规则（黑名单通配）
-├── .skillignore                  # 扫描忽略规则（gitignore 语法）
-├── skill_gateway.config.json     # 可选：追加扫描根与边权重
-├── inputs/                       # 外部输入（平台清单等）
-├── output/                       # 运行时生成物统一隔离存放处（不入源码包）
-├── templates/                     # 独立资产（dashboard 前端模板）
-├── scripts/                      # 核心脚本
-│   ├── build_index.py            #    CLI 入口（命令注册表 COMMANDS 驱动 argparse/help/dispatch）
-│   ├── pipeline.py               #    多技能图谱串联编排引擎（depends_on 拓扑分层 / 并行候选 / 接力）
-│   ├── paths.py                  #    路径/配置/画像/扫描根/忽略规则/产物目录
-│   ├── scanner.py                #    扫描技能 + MCP（跨类型同名去重）
-│   ├── skillmd.py                #    SKILL.md 解析（BOM/CRLF/块标量健壮）
-│   ├── index_store.py            #    索引读写（原子写/版本校验）+ ID/关系边/覆盖口径 + L0/L1
-│   ├── importer.py               #    导入外部技能清单（平台不落盘时用）
-│   ├── platform_bridge.py        #    平台桥接：清单→镜像目录→交给 indexer
-│   ├── retrieval.py              #    排序检索（maximal 去重/词边界建边/归一化置顶提权）
-│   ├── reports.py                #    audit / stats / diff / onboard（dashboard 模板已拆分）
-│   ├── dashboard_template.html   #    dashboard 前端资产（纯本地，无外发请求）
-│   ├── route_rules.json          #    意图路由规则表（数据文件，可定制；route.py 加载）
-│   ├── bundle.py                 #    L0/L1/L2 + 关系图 + boot.md
-│   ├── doctor.py                 #    技能体检（CJK 感知描述阈值）
-│   ├── export.py                 #    多格式导出
-│   ├── content_index.py          #    代码/正文分块倒排（terms 内嵌单文件 / 投喂 chunk 带真实源路径）
-│   ├── proactive.py              #    Self-Improving：只计"真实使用"频次，状态文件有增长上限
-│   └── route.py                  #    意图路由（话术 → 命令，规则外置 route_rules.json）
-├── tests/                        # 测试文件
-├── docs/                         # 开发过程文档
-└── references/
-    ├── commands.md               #    子命令手册
-    ├── index-format.md           #    索引格式与产物
-    └── governance.md             #    治理机制与详细契约
-```
+<p align="center">
+  <a href="#-为什么需要点将台">为什么需要</a> •
+  <a href="#-核心能力">核心能力</a> •
+  <a href="#-5-分钟极速上手">快速开始</a> •
+  <a href="#-可视化拓扑看板">图谱看板</a> •
+  <a href="#-架构设计与分层加载">架构设计</a> •
+  <a href="#-命令速查手册">命令手册</a> •
+  <a href="README_EN.md">English</a>
+</p>
 
-## 子命令（能力，均在技能根目录执行）
-| 命令 | 作用 |
-|------|------|
-| `python scripts/build_index.py profile` | **用户画像与指令管理**：查看/配置固定根、置顶技能、排除规则与全局必遵指令 |
-| `python scripts/build_index.py pipeline "<任务>"` | **多技能串联编排**：检索种子 → depends_on 拓扑分层 → 生成阶段/矩阵/执行契约（无预设模板；无依赖边时输出并行候选） |
-| `python scripts/build_index.py chain "<任务>"` | `pipeline` 的真别名（argparse alias，参数完全一致） |
-| `python scripts/build_index.py chat "<问题>" [--exclude <技能>]` | **智能图谱问答**：返回推荐技能 + 1-hop 关联 + 正文内容片段（支持排除过滤与指令前置） |
-| `python scripts/build_index.py route "<用户话术>"` | **意图路由**：把自然语言话术映射到最合适的命令 |
-| `python scripts/build_index.py search 关键词 [--top N] [--exclude <技能>]` | **排序检索**：置顶提权 + 配额硬顶（Top 20）+ 动态长尾剪枝 + 0 命中定向增量自愈 |
-| `python scripts/build_index.py list [--all] [--excluded]` | 浏览技能与 MCP 工具清单（`--excluded` 专查已排除技能） |
-| `python scripts/build_index.py update [--targeted <关键词>]` | **增量索引**：只处理新增/变更/移除，支持定向查询增量（日常用） |
-| `python scripts/build_index.py dashboard [--open] [--download] [--serve]` | 生成技能图谱可视化 HTML（D3.js 力导向图，支持已排除节点与显隐开关）。`--open`/`--download` 为显式开关（默认无副作用）；`--serve` 仅绑定 127.0.0.1；面板**纯本地展示，无任何在线翻译/外发请求** |
-| `python scripts/build_index.py clean` | **纯净复原**：清理全部运行时产物与缓存，保留纯净源数据状态（发布/打包前用） |
-| `python scripts/build_index.py explain <技能名>` | 某技能的**详细使用建议** |
-| `python scripts/build_index.py detail <技能名>` | 查看某技能完整 SKILL.md（默认不进上下文） |
-| `python scripts/build_index.py related <技能名>` | 查技能之间的关系边（`depends_on` / `contains` / `overlap` / `similar`） |
-| `python scripts/build_index.py content-find <query>` | **正文检索**：查代码定义与规则所在文件及行号 |
-| `python scripts/build_index.py onboard <技能名>` | 生成技能上手指南（结构化入门） |
-| `python scripts/build_index.py diff <技能名>` | 技能变更影响分析（直接下游/二级依赖） |
-| `python scripts/build_index.py audit [--top N]` | **Token 账本明细**：单次选型对比 / 全文单份均值 / 容量明细 |
-| `python scripts/build_index.py bench [<基线Σtoken> <网关Σtoken>]` | **注入台账与 A/B 实测**：不带参数查台账累计；带两数出会话差值 |
-| `python scripts/build_index.py bundle` | 生成 **L0/L1/L2 + 关系图 + `boot.md`**（可上传网页） |
-| `python scripts/build_index.py doctor [--graph]` | **技能体检**与图谱质量审查 |
-| `python scripts/build_index.py export <格式>` | 多格式导出（`minjson` 含关系边） |
-| `python scripts/build_index.py index [--broad]` | **全量重建**索引（首次使用或强制重扫） |
-| `python scripts/build_index.py roots` | **扫描根探针**：诊断为什么是 0 项 |
-| `python scripts/build_index.py stats` / `catalog` / `help` | **覆盖口径** / Markdown 总览 / 命令一览 |
+</div>
 
-## 规模化治理与防护机制
-针对平台拥有上百乃至数千技能时的性能与安全诉求，内置六项治理机制：
-1. **用户重要指令与技能画像 (skill_profile.json)**：支持固定根锁定、置顶常用技能加权提权，并在任何检索/问答/流水线首部强制注入用户全局指令。
-2. **配额硬顶截断 (Hard Ceiling)**：全局硬上限 `MAX_RETRIEVAL_TOP = 20`，严防大入参导致大模型上下文溢出。
-3. **动态分数剪枝 (Dynamic Pruning)**：底线分 `MIN_RELEVANCE_SCORE = 0.35`，并截断低于最大证据权重 25% 的长尾低质技能（基准取名称加分/置顶提权之前的证据权重，命中加分不连带抬高剪枝线），强力降噪。
-4. **未命中定向自愈 (Targeted Update on Miss)**：检索 0 命中时探测磁盘，若有新装/修改技能，针对查询关键词定向增量编译，避免耗时全量重扫。
-5. **多级黑名单与图谱可视化 (.skillexclude / Dashboard)**：支持通配符排除名单；在 D3 拓扑图中以红色虚线/暗色区分已排除节点，并支持页面一键显隐切换。
-6. **主动自省进化与无感智能更新 (Self-Improving + Proactive Agent)**：引入后置执行钩子（Post-Execution Hook），每次操作后基于根目录物理变动指纹（`os.scandir` 毫秒级探测）与心跳周期自省决策增量对齐。**计频口径只认"真实使用"**：用户显式 `detail` 查看全文 / 明确采纳才计入频次——出现在检索结果里不算（否则"被搜到 3 次"就自动置顶，置顶提权又让它更容易被搜到，形成与用户意图无关的正反馈）；高频技能达到阈值（默认 3 次）自动晋升至置顶画像（`pinned_skills`），状态文件与纠偏日志均有增长上限。
-7. **退出码约定（给调用方/Agent 区分三种结局）**：`0` 成功；`2` 预期内的未命中/未找到（可换词重试，如 detail 找不到技能、检索 0 命中）；`1` 异常错误（顶层兜底打印 traceback）。裸跑 `build_index.py`（无子命令）打印帮助退出，不会隐式触发全量扫描。
+---
 
+<div align="center">
+  <img src=".github/assets/dashboard.png" alt="Skill Gateway Interactive Dashboard" width="920" style="border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.15);">
+  <p><sub>图：纯本地单文件 D3.js 力导向图谱 —— 实时穿透“全部 / 技能 / MCP / 连接器”与平台绑定下钻</sub></p>
+</div>
 
-## 索引格式（给 AI 读，所以按"高信息密度"设计）
-思路借鉴 **AOCI**：索引不是源码/摘要的搬运，而是一份**纯文本、定长字段、带硬配额**的定位表。
+---
 
-`skill-index.llms.txt` —— **模型读的那一份**。头块声明格式 + **一条记录占且只占一行**：
+## 💡 为什么需要点将台？
 
-```
-#SKILL-INDEX: 1
-#Format: skill-index/dense-v1   (plain text; one record per line)
-#Count: <n> skill + <m> mcp = <total>
-#Legend: <name>[tags]: <description> | 触发: <t1>、<t2>    tags: s=skill m=mcp R=has-references
-#Quota: description<=400chars, triggers<=8
-#Rule: 这里只放「定位用」摘要；SKILL.md 全文属 L2，命中后再取，不要抄进本文件
+在当前以 **Claude Code、Antigravity、Cursor、WorkBuddy、Dify** 为代表的 AI 编程智能体时代，随着开发者安装的本地技能与 MCP 工具达到几十甚至上百个，传统模式会迅速撞上三大工程瓶颈：
 
-<技能名>[sR]: <做什么/何时用，一行写完> | 触发: <词1>、<词2>
-```
+| 传统痛点 | 瓶颈表现 | 点将台 (Skill Gateway) 的解法 |
+| :--- | :--- | :--- |
+| **💥 上下文严重爆炸** | 几十个 `SKILL.md` 全文常驻 System Prompt，消耗数十万 Token，首字时延（TTFT）与推理费用激增 | **L0/L1/L2 按需分层与硬配额**：高密度 dense 索引仅占极少字符，上下文占用减少 **97.7%（44× 压缩）** |
+| **🧩 孤立协同难串联** | 复杂工程需求（如“重构治理 + 单元测试 + 安全卡点 + 交付”）各个技能各干各的，缺乏依赖拓扑与接力 | **Kahn 依赖拓扑动态分层**：基于 `depends_on` 边动态生成 DAG 流水线与 Context Handoff，拒绝硬编码模板 |
+| **🔍 资产黑盒不可视** | 本地装了哪些技能、哪些 MCP 工具、有没有坏描述/重名冲突/断链，完全无法宏观掌控 | **单文件离线 D3.js 图谱与命中账本**：零外部网络依赖，节点/关系边/健康体检/Token 审计一图看全 |
 
-- **头块**：模型不必猜格式，也便于人工核对（`#Count` / `#Quota` / `#Rule` 都是自描述的）。
-- **一条一行 + 定长字段顺序**：可整行截取、可按行做预算，不浪费 token 在 JSON 括号与缩进上。
-- **紧凑标签**：`[sR]` 一次表达"技能 + 含参考资料"（`m`=MCP）。
-- **硬配额**：单条描述 ≤400 字符（约中位数 3 倍，只夹长尾）、触发词 ≤8 个 —— 防止索引随时间被撑成全文副本。
+---
 
-`skill-index.json` —— **机器读的那一份**（紧凑 JSON、不缩进）。`search` / `detail` / `update` 用它，
-**描述保真、不截断**。两份分工明确：**模型读的省 token，机器读的保真**。
+## ✨ 核心能力
 
-它还额外携带三样（**只在机器这份里**，绝不为它们多占模型那份的一行 token）：
+### 1. 🕸️ 多技能智能 DAG 串联编排 (Pipeline Chaining)
+- **动态图谱拓扑分层**：基于技能元数据的依赖关系边（`depends_on`、`contains`、`similar`）做拓扑排序，把复合任务拆解为阶段清晰的端到端 DAG 流水线；
+- **全生命周期开发规范**：无缝覆盖“拆解规划 → 资料核查 → 编码实现 → 测试验证 → 修错排查 → 重构治理 → 审查把关 → 归档交付”标准工程阶段；
+- **上下文接力 (Context Handoff)**：上游技能的输出自动传递至下游，查无依赖时诚实推选并行候选，严禁伪造时序。
 
-| 字段 | 是什么 | 谁在用 |
-|------|--------|--------|
-| `id` | 每条记录的**稳定标识** `skill:<名>` / `mcp:<名>` | 关系边两端引用它 |
-| `edges` | **关系边**：`overlap`（描述/触发词重叠，"做的事像"）/ `family`（同族命名） | `related`、`stats`、`export minjson`、`bundle` |
-| `meta` | **覆盖口径**：按来源计数、全文覆盖（完整/占位/无本地文件）、缺什么（无描述/无触发词名单）、边数 | `stats` |
+### 2. ⚡ 毫秒级语义检索与代理直达 (Scoring & Direct Proxy)
+- **双语 CJK 优先检索**：内置 CJK 2/3-gram 分词与动态 IDF 加权算法，精准匹配中英文技术专名与触发短语；
+- **动态长尾剪枝与配额硬顶**：`MAX_RETRIEVAL_TOP = 20` 配额控制，自动截断低于最大证据 25% 的无关低质技能；
+- **透明代理直达**：单点需求自动命中最佳候选并代理执行，打分并列时输出证据供裁决，零命中自动生成能力缺口工单。
 
-边是 `index`/`update` 时**算一次存下来的**，所以到处看到的"相关技能"是同一套结果（旧版索引没存边时 `related` 会就地现算）。
+### 3. 📊 交互式可视化拓扑看板 (100% Offline D3 Dashboard)
+- **纯本地单文件交付**：内嵌完整 D3.js 力导向引擎，完全脱离外部网络与 CDN，内网/离线沙箱 100% 可用；
+- **多维度即时切片**：支持在 `全部`、`技能`、`MCP`、`连接器` 视图间平滑过渡，支持平台/Agent 归属下钻；
+- **节点拓扑档案**：单击高亮 1-Hop 关联网络，查看技能提取能力、触发词、前置依赖及调用频次。
 
-## 分层加载（如何"加速任何平台"）
-`bundle` 生成三层制品 + 关系图，接入任意平台时把 `boot.md` 作为系统提示词开头：
+### 4. 💰 Token 经济学审计与实测台账 (Token Ledger & A/B Bench)
+- **真实 A/B 会话实测 (`bench`)**：对比“全量常驻”与“网关按需注入”的真实 Token 消耗差值；
+- **命中率与缺口账本 (`ledger`)**：记录技能命中榜单与零命中 Query，自动定位团队 Agent 技能库短板。
 
-| 层 | 文件 | 内容 |
-|----|------|------|
-| L0 | `skills.L0.txt` | 仅技能名（最省；只想知道"有哪些技能"时用它） |
-| L1 | `skills.L1.txt` | 上面那份 dense 索引（含头块，**启动加载这层**） |
-| L2 | `skills.L2.map.json` | 名字 → SKILL.md 全文路径（命中才取） |
-| 图 | `skills.edges.json` | 关系边（需要"谁和谁相关"时才加载，平时不必进上下文） |
+### 5. 🛡️ 主动自省自愈与工业级健壮性 (Self-Healing & Cross-Platform)
+- **毫秒级目录感知**：利用物理变动指纹自动进行增量更新，新技能落盘秒级同步；
+- **零外部依赖 (Pure Stdlib)**：全模块由 Python 标准库精心打造，开箱即用，无 `pip install` 负担；
+- **跨平台严苛 CI 验证**：在 Ubuntu 与 Windows 双系统、Python 3.10 与 3.13 环境下保持 100% 测试通过。
 
-## 覆盖范围（"搜索全部"）
-扫描根按优先级合并，**换环境/进沙箱也不会扫出 0 项**：
+---
 
-1. `skill_gateway.config.json` 的 `skill_roots`（显式指定，最高优先）
-2. 环境变量 `SKILL_GATEWAY_SKILL_DIRS`（路径分隔符分隔）
-3. **自身相对**：技能自身所在的父 / 祖父目录——技能被解压到哪，那里往往就是平台的技能仓库
-4. 内置约定目录：`~/.claude/skills`、`~/.claude/plugins`、`~/.workbuddy/skills`、`~/.codebuddy/skills`、`~/.cursor/skills`、`~/.config/claude/skills`、`~/.openclaw/skills` 及项目级 `.claude/.workbuddy/.cursor/.codeium/skills` 等
-5. **广域兜底**：约定根里除本技能自己外一个技能都没有时，自动从 `~ / /app / /workspace / /opt / /srv` 等起点浅层搜 `skills` / `*-skills` 目录（`index --broad` 可强制开启）
+## ⚡ 5 分钟极速上手
 
-递归只跳过 `.git`/`node_modules` 等垃圾目录，**隐藏技能包（如 `.minimax-skills`）内的技能也会被收录**。
-**跳哪些目录由 `.skillignore` 决定**（gitignore 语法，放在技能根目录；不写就用内置默认）——想忽略某个目录不用改代码：
+### 方式一：作为 Agent 元技能挂载（推荐）
 
-```
-*/backup/
-!dist                  # 撤销内置默认：不再跳过 dist
-tmp/
-```
-支持 `#` 注释、`!` 否定、`dir/` 只匹配目录、`/x` 从技能根锚定、`*` `?` `**` 通配。规则 = 内置默认 → 本文件，
-所以 `!` 能把内置默认跳过的东西重新纳入（与 git 一致：目录一旦被跳过就不再往下走，里面的子项无法单独再纳入）。
-
-MCP：扫描 `~/.claude.json`、`.mcp.json`、`.claude/mcp.json`、`.workbuddy/mcp.json` 等的 `mcpServers`（含 `projects` 嵌套）。
-
-### 换环境后"0 项"怎么办
-先分清两类：
-
-**A. 宿主技能目录不可达（平台把 shell 隔离在会话工作区）** —— 这是**运行环境不匹配，不是 indexer 的 bug**。若 shell 被隔离在会话工作区、宿主技能目录一碰就被安全策略拦，扫描根必然全落空 → `{"count": 0, "entries": []}`。**再怎么写扫描逻辑都扫不到**，只能走平台正规通道：让平台把技能导出到 `<技能根>/inputs/platform_skills.json`，再跑桥接：
+将本仓库克隆至你的 Agent 宿主技能目录：
 
 ```bash
-python scripts/platform_bridge.py              # 默认全量：清单→镜像→index+audit（缺完整 SKILL.md 正文则中止）
-python scripts/platform_bridge.py --status     # 状态：清单/镜像/索引 在不在、是不是全量
-python scripts/platform_bridge.py --src -      # 从 stdin 读清单
-python scripts/platform_bridge.py --mode list  # 显式接受降级：只建"元数据索引"（非全量）
-python scripts/platform_bridge.py --force      # 清单没变也强制重落镜像
-python scripts/platform_bridge.py --only clean # 清掉上次镜像（按 manifest，只删它建的）
+# 挂载到 Claude Code / Antigravity / Cursor 等技能目录
+git clone https://github.com/qi-xiao-bai/skill-gateway.git ~/.claude/skills/skill-gateway
 ```
-桥接把技能落成 `<技能根>/inputs/platform_mirror/<name>/SKILL.md` 镜像，用 `SKILL_GATEWAY_ONLY_DIRS=1` 让 indexer **只扫镜像**，索引结果即平台的技能集。清单没变（按指纹）时跳过重落 → 重复跑幂等。
 
-### 生命周期分层：镜像和索引是易失的，脚本才是资产
-| 层 | 内容 | 生命周期 | 跨会话 |
-|---|---|---|---|
-| ① 索引产物 | `skill-index.json` / `.llms.txt` / L1 / catalog | 技能根目录，**易失** | ❌ 需重建 |
-| ② 镜像目录 | `inputs/platform_mirror/` | 技能包内，**易失** | ❌ 需重建 |
-| ③ 桥接脚本 + 文档 | `scripts/`、`SKILL.md` | 平台数据库里的技能包，**持久** | ✅ 真正的资产 |
-| ④ 清单暂存 | `inputs/platform_skills.json` | 平台侧暂存，**大概率在，不保证**（且通常**只有元数据**） |
+挂载完成后即刻生效！在对话框中直接对 Agent 下达自然语言指令即可触发：
+- *“帮我把这个复杂重构任务编排成一个多阶段流水线”*（自动触发拓扑编排）
+- *“现在技能库有哪些工具？上下文开销如何？”*（自动触发 Token 账本与体检）
 
-⇒ **修复方案把"可重建的逻辑"固化在脚本里，而不是指望 ①② 活着。** 元数据层（镜像 / 索引）确实一条命令就能重算：
+---
+
+### 方式二：CLI 独立体验与看板启动
 
 ```bash
-python scripts/platform_bridge.py --status   # 看状态
-python scripts/platform_bridge.py            # 重建镜像 + 索引
+# 1. 克隆代码
+git clone https://github.com/qi-xiao-bai/skill-gateway.git
+cd skill-gateway
+
+# 2. 一键建立本地技能索引与关系图谱
+python scripts/build_index.py index
+
+# 3. 启动本地交互式 D3.js 拓扑看板并在浏览器打开
+python scripts/build_index.py dashboard --serve --open
 ```
-但要分清：这条命令重建的是**元数据**。**完整 SKILL.md 全文从来不在 ①②④ 里** —— 要全量索引，必须先回平台逐技能取回全文（`--mode full` 默认就要求这一点）；**全文一旦丢了是恢复不了的**。
-**并且 `index` / `update` / 任何读命令都自带自愈**：`list` / `search` / `stats` 这类命令发现**索引不存在会自动建一次**；只要发现"只扫到本技能自己"且技能包里有平台清单，就自动落镜像并重扫（`SKILL_GATEWAY_NO_AUTO=1` 关闭）。**构建分两档，绝不静默冒充**：`index` / `update` 默认建**元数据索引**（一行一技能：名字+描述+触发词，仅定位/路由用，诚实标注、无地图密度数字）；`index --full` / `update --full` 才是**全量构建**——要求清单含完整 SKILL.md 正文，缺任何一项就**中止（rc=2）、不写索引**，并打印"怎么取全文"的步骤。`detail` / `audit` / `content-find` / `bundle` 这些要正文的命令遇到元数据索引会明确提示"需要全文 → 跑 `index --full`"（或按步骤回平台取回），**拿占位元数据冒充"构建完成"是禁止的**。
 
-> **两点诚实提醒**
-> 1. 平台 `list` 只给 name/description，**不含完整 SKILL.md 正文**。拿它建出来的是"元数据索引"，`audit` 会**拒绝给出压缩率**（基线不是全文，算了也是假的）。要真索引就按 `--mode full` 提示的步骤先取全文。
-> 2. 平台自带 `skill_follow(list/load)` 时，"有哪些技能/怎么用"它就是**实时索引**，不必跑索引。桥接的价值在 indexer 独有能力：`audit`（token 账本）、`bundle`（L0/L1/L2）、`export`（跨平台导出）。
+控制台将输出本地服务地址（如 `http://127.0.0.1:8123/skill-dashboard.html`），即可直观探索全库拓扑！
 
-**B. 技能在磁盘上、只是不在约定目录** —— 走扫描/导入：
+---
 
-1. 先 `python scripts/build_index.py roots` 看这台机器上到底有什么（`index` 为 0 时也会自动打印探针）。
-2. 有技能目录 → 写进 `skill_gateway.config.json` 的 `skill_roots`，或设 `SKILL_GATEWAY_SKILL_DIRS`。
-3. 仍拿不到 → 用 `import` 灌清单：`python scripts/build_index.py import skills.txt` / `... import -`（stdin）/ `... import "技能A: 描述A"`。
+## 🗺️ 架构设计与分层加载
 
-## 环境变量
-| 变量 | 作用 |
-|---|---|
-| `SKILL_GATEWAY_SKILL_DIRS` | 追加技能扫描根（路径分隔符分隔） |
-| `SKILL_GATEWAY_MCP_CONFIGS` | 追加 MCP 配置路径 |
-| `SKILL_GATEWAY_OUT_DIR` | 产物输出目录（默认技能根目录） |
-| `SKILL_GATEWAY_ONLY_DIRS` | `1`=只用显式给的根，不掺自身相对与内置默认（桥接用） |
-| `SKILL_GATEWAY_NO_AUTO` | `1`=关闭 `index`/`update` 的桥接自愈 |
-| `SKILL_GATEWAY_BRIDGE_RUN` | 桥接子进程标记（防自愈递归，一般不用手动设） |
-| `SKILL_GATEWAY_MIRROR` | 桥接的镜像目录（默认 `<技能根>/inputs/platform_mirror`） |
-| `PLATFORM_SKILLS_JSON` | 桥接的清单文件路径 |
+为彻底解决大模型上下文臃肿问题，点将台借鉴现代化高信息密度设计，对技能资产实行三层分级治理：
 
-## 检索质量地基
-索引器只抽取、不润色。被索引的每个技能，其 `description` 必须写成「**做什么 + 何时用 + 触发词**」——这是建议准不准的根本。解析支持单行、引号、以及 YAML 块标量 `>` / `|`。
+```
+                    ┌────────────────────────┐
+                    │ 本地技能目录 / MCP 配置 │
+                    └───────────┬────────────┘
+                                │ 毫秒级扫描 + 拓扑提取
+                                ▼
+                    ┌────────────────────────┐
+                    │ 知识图谱 (DAG Edges)   │
+                    │ depends_on / contains  │
+                    └───────────┬────────────┘
+                                │ 分层编译
+        ┌───────────────────────┼───────────────────────┐
+        ▼                       ▼                       ▼
+┌───────────────┐       ┌───────────────┐       ┌───────────────┐
+│  L0 极简层    │       │  L1 紧凑摘要  │       │  L2 完整原文  │
+│ 仅名称列表    │       │ 单行定长 Dense│       │ 完整 SKILL.md │
+│ (问有哪些技能) │       │ (常驻检索路由)│       │ (命中按需加载)│
+└───────────────┘       └───────────────┘       └───────────────┘
+```
 
+| 档位 | 产物形态 | 内容与用途 | 注入策略 |
+| :--- | :--- | :--- | :--- |
+| **L0** | `skills.L0.txt` | 纯技能名称与类型列表 | 极低消耗，适合全局探测有哪些工具 |
+| **L1** | `skill-index.llms.txt` | 一行一技能、硬配额截断的 dense 紧凑索引 | **常驻系统提示词首选**，兼顾高召回与低 Token |
+| **L2** | `skills.L2.map.json` | 技能标识到本地 `SKILL.md` 物理文件映射 | **零常驻**，仅当 L1 命中且确定采纳后精准读取 |
+| **图** | `skills.edges.json` | 依赖、包含、相似等关系边集合 | 编排与关系发现时按需计算调用 |
+
+---
+
+## 💻 核心命令速查手册
+
+所有命令均支持在仓库根目录直接运行（由统一调度入口 `scripts/build_index.py` 驱动）：
+
+| 分类 | 命令 | 说明 |
+| :--- | :--- | :--- |
+| **调度** | `python scripts/build_index.py pipeline "<复合任务>"` | **多技能 DAG 串联编排**：拓扑分层并输出阶段协同矩阵 |
+| | `python scripts/build_index.py chat "<单点需求>"` | **智能问答与代理直达**：推荐最优技能并挂载 1-Hop 关联上下文 |
+| | `python scripts/build_index.py route "<用户话术>"` | **意图路由**：把用户自然语言映射为最佳 CLI 命令 |
+| **检索** | `python scripts/build_index.py search <关键词> [--top N]` | **排序检索**：置顶提权 + 动态剪枝的高精度技能召回 |
+| | `python scripts/build_index.py list [--all]` | 浏览本地技能与 MCP 工具清单 |
+| | `python scripts/build_index.py detail <技能名>` | 查阅某技能的完整 `SKILL.md` 正文 |
+| | `python scripts/build_index.py related <技能名>` | 查阅某技能与其他技能的拓扑关系边 |
+| **可视化**| `python scripts/build_index.py dashboard --serve --open` | **启动交互图谱**：本地起服并在浏览器打开 D3 力导向看板 |
+| **审计** | `python scripts/build_index.py audit` | **Token 经济审计**：单次选型对比与容量明细 |
+| | `python scripts/build_index.py bench [<基线> <网关>]` | **注入台账实测**：查看累计注入或计算 A/B 会话节省比 |
+| | `python scripts/build_index.py doctor` | **技能体检**：检测坏描述、跨类型重名、孤岛与断链 |
+| **维护** | `python scripts/build_index.py update` | **增量同步**：毫秒级扫描并增量对齐变动 |
+| | `python scripts/build_index.py clean` | **纯净复原**：清空所有运行时中间产物与缓存 |
+
+---
+
+## 🧪 工程质量与跨平台测试
+
+点将台坚持严苛的软件工程自洽标准：
+- **测试覆盖**：包含 130+ 项覆盖索引编译、IDF 打分、Kahn 拓扑排序、A/B 台账与自愈逻辑的完整单元测试；
+- **全矩阵 CI 守护**：每次代码提交自动在 **Ubuntu** 与 **Windows**、**Python 3.10** 与 **Python 3.13** 上执行自动化流水线；
+- **零依赖承诺**：不引入任何不可控的三方外部包，确保在任意安全隔离区与内网容器环境皆可开箱即跑。
+
+---
+
+## 📄 开源许可证
+
+本项目基于 [MIT License](LICENSE) 开源，欢迎自由商用、集成与定制开发。
