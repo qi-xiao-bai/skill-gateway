@@ -45,12 +45,12 @@
 
 As AI coding agents (**Claude Code, Antigravity, Cursor, WorkBuddy, Dify**, etc.) scale to dozens or hundreds of installed skills and MCP servers, developers inevitably hit three major engineering roadblocks:
 
-1. **Context Window Exhaustion**: Injecting raw `SKILL.md` documents directly into the system prompt wastes hundreds of thousands of tokens, driving up costs and Time-to-First-Token (TTFT) latency.
+1. **Selection by Guesswork**: With dozens or hundreds of installed skills, which ones enter the prompt — and in what order — is left to semantic guesswork; both the injected volume and the reason for a hit stay black boxes.
 2. **Orchestration Void**: Complex tasks (e.g., refactoring + testing + code review + delivery) cannot be addressed by an isolated skill. There is no automated dependency chaining or context handoff.
 3. **Asset Black Box**: Teams cannot inspect their installed skill inventory, detect broken descriptions or circular dependencies, or measure actual usage.
 
 ### The Skill Gateway Solution:
-- **97.7% Token Compression (44×)**: Layered indexing (L0/L1/L2) with compact dense formatting and hard quota enforcement.
+- **Scored Selection + L0/L1/L2 Layering**: Only a dense locator index stays resident; full text loads on hit. A single selection injects just the top-K hit rows with their evidence, while `audit` / `stats` compute the index-to-library ratio and the per-selection delta live on your own machine — run it once to get your own numbers.
 - **Topological DAG Chaining**: Kahn's topological sorting dynamically decomposes composite tasks into phased execution pipelines with automated context handoff.
 - **100% Self-Contained Offline Dashboard**: Single-file D3.js interactive graph visualization with zero external CDN requests.
 
@@ -61,7 +61,7 @@ As AI coding agents (**Claude Code, Antigravity, Cursor, WorkBuddy, Dify**, etc.
 - 🕸️ **DAG Pipeline Orchestration**: Automatically chains multiple skills into structured workflows based on `depends_on`, `contains`, and `similar` relationship edges.
 - ⚡ **Precision Scoring & Proxy Routing**: Bilingual CJK 2/3-gram inverted indexing with IDF term weighting for sub-second skill discovery.
 - 📊 **Offline Interactive Graph Dashboard**: Single-file HTML viewer for real-time visualization of all skills, MCP tools, and connectors.
-- 💰 **Token Economy Audit & Ledger**: Measures live token savings, logs query hit rates, and turns unhandled queries into capability gap reports.
+- 💰 **Token Economy Audit & Ledger**: Measures live token deltas per selection, logs query hit rates, and turns unhandled queries into capability gap reports.
 - 🛡️ **Zero Dependencies & High Robustness**: 100% standard library Python implementation with cross-platform CI matrix coverage (Ubuntu & Windows).
 
 ---
@@ -107,7 +107,7 @@ Open `http://127.0.0.1:8123/skill-dashboard.html` in your browser to explore you
 | | `python scripts/build_index.py detail <skill_name>` | Views full `SKILL.md` documentation |
 | | `python scripts/build_index.py related <skill_name>` | Inspects topological graph edges |
 | **Dashboard** | `python scripts/build_index.py dashboard --serve --open`| Serves interactive D3 force-directed graph |
-| **Audit** | `python scripts/build_index.py audit` | Token economy analysis and compression audit |
+| **Audit** | `python scripts/build_index.py audit` | Token economy audit: live-computed selection delta and library capacity |
 | | `python scripts/build_index.py doctor` | Health check for broken descriptions & orphan nodes |
 | **Maintenance**| `python scripts/build_index.py update` | Millisecond-level incremental sync |
 
